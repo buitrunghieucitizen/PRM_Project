@@ -11,23 +11,87 @@ class Reports extends StatefulWidget {
 class _ReportsState extends State<Reports> {
   String _period = '6m';
 
-  final List<Map<String, dynamic>> _monthly = [
-    {'m': 'T1', 'inc': 28.0, 'exp': 16.5},
-    {'m': 'T2', 'inc': 30.0, 'exp': 18.2},
-    {'m': 'T3', 'inc': 32.0, 'exp': 19.8},
-    {'m': 'T4', 'inc': 28.5, 'exp': 17.6},
-    {'m': 'T5', 'inc': 35.0, 'exp': 22.0},
-    {'m': 'T6', 'inc': 43.0, 'exp': 21.5},
-  ];
+  ApiService _apiService = ApiService();
+  bool _isLoading = true;
+  List<Transaction> _transactions = [];
 
-  final List<Map<String, dynamic>> _catData = [
-    {'name': 'Ăn uống', 'val': 4200000.0, 'color': const Color(0xFF0D9488)},
-    {'name': 'Mua sắm', 'val': 3850000.0, 'color': const Color(0xFFF43F5E)},
-    {'name': 'Di chuyển', 'val': 1850000.0, 'color': const Color(0xFF3B82F6)},
-    {'name': 'Hóa đơn', 'val': 1680000.0, 'color': const Color(0xFF8B5CF6)},
-    {'name': 'Sức khỏe', 'val': 750000.0, 'color': const Color(0xFF10B981)},
-    {'name': 'Giải trí', 'val': 620000.0, 'color': const Color(0xFFF59E0B)},
-  ];
+  List<Map<String, dynamic>> _monthly = [];
+  List<Map<String, dynamic>> _catData = [];
+
+  double _totalIncome = 0;
+  double _totalExpense = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    setState(() => _isLoading = true);
+    try {
+      final txs = await _apiService.getTransactions(1);
+      
+      // Calculate _monthly for the last 6 months
+      Map<int, Map<String, double>> monthlyMap = {};
+      double inc = 0;
+      double exp = 0;
+      Map<String, double> catMap = {};
+
+      for (var t in txs) {
+        if (t.type.toLowerCase() == 'income') {
+          inc += t.amount;
+        } else {
+          exp += t.amount;
+          catMap[t.category] = (catMap[t.category] ?? 0) + t.amount;
+        }
+        
+        int m = t.transactionDate.month;
+        if (!monthlyMap.containsKey(m)) {
+          monthlyMap[m] = {'inc': 0, 'exp': 0};
+        }
+        if (t.type.toLowerCase() == 'income') {
+          monthlyMap[m]!['inc'] = monthlyMap[m]!['inc']! + t.amount;
+        } else {
+          monthlyMap[m]!['exp'] = monthlyMap[m]!['exp']! + t.amount;
+        }
+      }
+
+      List<Map<String, dynamic>> tempMonthly = [];
+      for (int i = 5; i >= 0; i--) {
+        DateTime d = DateTime.now().subtract(Duration(days: 30 * i));
+        int m = d.month;
+        double minc = monthlyMap[m]?['inc'] ?? 0;
+        double mexp = monthlyMap[m]?['exp'] ?? 0;
+        tempMonthly.add({'m': 'T$m', 'inc': minc / 1000000, 'exp': mexp / 1000000}); // Convert to millions for chart
+      }
+
+      List<Map<String, dynamic>> tempCat = [];
+      List<Color> colors = [const Color(0xFF0D9488), const Color(0xFFF43F5E), const Color(0xFF3B82F6), const Color(0xFF8B5CF6), const Color(0xFF10B981), const Color(0xFFF59E0B)];
+      int colorIdx = 0;
+      catMap.forEach((key, value) {
+        tempCat.add({'name': key, 'val': value, 'color': colors[colorIdx % colors.length]});
+        colorIdx++;
+      });
+      tempCat.sort((a, b) => (b['val'] as double).compareTo(a['val'] as double));
+
+      if (mounted) {
+        setState(() {
+          _transactions = txs;
+          _monthly = tempMonthly;
+          _catData = tempCat;
+          _totalIncome = inc;
+          _totalExpense = exp;
+        });
+      }
+    } catch (e) {
+      debugPrint(e.toString());
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
 
   String _fmt(double n) {
     if (n >= 1e6) return '${(n / 1e6).toStringAsFixed(1)}M';
@@ -79,11 +143,11 @@ class _ReportsState extends State<Reports> {
                 // KPI row
                 Row(
                   children: [
-                    _buildKPICard('Tổng thu', '196M', '+18%', true, Icons.trending_up),
+                    _buildKPICard('Tổng thu', _fmt(_totalIncome), '', true, Icons.trending_up),
                     const SizedBox(width: 8),
-                    _buildKPICard('Tổng chi', '115.7M', '+9%', false, Icons.trending_down),
+                    _buildKPICard('Tổng chi', _fmt(_totalExpense), '', false, Icons.trending_down),
                     const SizedBox(width: 8),
-                    _buildKPICard('Tiết kiệm', '47%', '+6%', true, Icons.trending_up),
+                    _buildKPICard('Tiết kiệm', _totalIncome > 0 ? '${((_totalIncome - _totalExpense) / _totalIncome * 100).toStringAsFixed(0)}%' : '0%', '', true, Icons.trending_up),
                   ],
                 ),
               ],

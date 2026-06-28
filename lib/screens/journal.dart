@@ -16,32 +16,59 @@ class _JournalState extends State<Journal> {
   
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _chatController = TextEditingController();
+  ApiService _apiService = ApiService();
+  bool _isLoading = true;
+  List<Transaction> _transactions = [];
 
-  final List<Map<String, dynamic>> _transactions = [
-    {'id': 1, 'desc': 'Lương tháng 6', 'amount': 38000000.0, 'type': 'income', 'cat': 'Thu nhập', 'date': '01/06', 'emoji': '💼'},
-    {'id': 2, 'desc': 'Siêu thị Vinmart', 'amount': 420000.0, 'type': 'expense', 'cat': 'Ăn uống', 'date': '02/06', 'emoji': '🛒'},
-    {'id': 3, 'desc': 'Grab xe', 'amount': 85000.0, 'type': 'expense', 'cat': 'Di chuyển', 'date': '03/06', 'emoji': '🚗'},
-    {'id': 4, 'desc': 'Netflix Premium', 'amount': 260000.0, 'type': 'expense', 'cat': 'Giải trí', 'date': '03/06', 'emoji': '🎬'},
-    {'id': 5, 'desc': 'Thưởng dự án Q2', 'amount': 5000000.0, 'type': 'income', 'cat': 'Thưởng', 'date': '05/06', 'emoji': '🎁'},
-    {'id': 6, 'desc': 'Tiền điện EVN', 'amount': 680000.0, 'type': 'expense', 'cat': 'Hóa đơn', 'date': '06/06', 'emoji': '💡'},
-    {'id': 7, 'desc': 'Bách hóa xanh', 'amount': 320000.0, 'type': 'expense', 'cat': 'Ăn uống', 'date': '07/06', 'emoji': '🛒'},
-    {'id': 8, 'desc': 'Shopee mua sắm', 'amount': 850000.0, 'type': 'expense', 'cat': 'Mua sắm', 'date': '08/06', 'emoji': '🛍️'},
-  ];
+  double _totalIncome = 0;
+  double _totalExpense = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    setState(() => _isLoading = true);
+    try {
+      final txs = await _apiService.getTransactions(1);
+      double inc = 0;
+      double exp = 0;
+      for (var t in txs) {
+        if (t.type.toLowerCase() == 'income') inc += t.amount;
+        else exp += t.amount;
+      }
+      if (mounted) {
+        setState(() {
+          _transactions = txs;
+          _totalIncome = inc;
+          _totalExpense = exp;
+        });
+      }
+    } catch (e) {
+      debugPrint(e.toString());
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
 
   List<Map<String, dynamic>> _aiMessages = [
     {'role': 'assistant', 'text': 'Xin chào! 👋 Tôi có thể phân tích chi tiêu và tư vấn kế hoạch tài chính cho bạn.'},
-    {'role': 'assistant', 'text': '📊 Tháng này bạn chi 28.8% cho ăn uống. Gợi ý: nấu ăn tại nhà 3 ngày/tuần → tiết kiệm ~1.9M ₫/tháng.'},
   ];
 
   bool _thinking = false;
 
   String _fmt(double n) {
+    if (n >= 1e9) return '${(n / 1e9).toStringAsFixed(1)}T';
     if (n >= 1e6) return '${(n / 1e6).toStringAsFixed(1)}M';
     if (n >= 1e3) return '${(n / 1e3).toStringAsFixed(0)}K';
     return n.toStringAsFixed(0);
   }
 
-  void _handleSend() {
+  void _handleSend() async {
     String text = _chatController.text.trim();
     if (text.isEmpty) return;
     
@@ -51,26 +78,30 @@ class _JournalState extends State<Journal> {
       _thinking = true;
     });
 
-    Future.delayed(const Duration(milliseconds: 1400), () {
+    try {
+      final advice = await _apiService.consultAI(1, text);
       if (!mounted) return;
-      final List<String> r = [
-        "Phân tích: Chi tiêu ăn uống chiếm 29%, cao hơn mức lý tưởng 20%. Thử meal-prep cuối tuần để tiết kiệm 800K/tháng.",
-        "Với tỷ lệ tiết kiệm hiện tại 50%, bạn đang làm rất tốt! Duy trì và đặt auto-transfer vào đầu tháng.",
-        "Danh mục mua sắm vượt 28%. Áp dụng quy tắc 24h chờ đợi trước mỗi lần mua để tránh chi tiêu bốc đồng.",
-      ];
       setState(() {
-        _aiMessages.add({'role': 'assistant', 'text': r[DateTime.now().millisecond % r.length]});
-        _thinking = false;
+        _aiMessages.add({'role': 'assistant', 'text': advice.aiResponse});
       });
-    });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _aiMessages.add({'role': 'assistant', 'text': 'Lỗi kết nối AI: $e'});
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _thinking = false);
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final filtered = _transactions.where((t) {
-      if (_tab == 'income' && t['type'] != 'income') return false;
-      if (_tab == 'expense' && t['type'] != 'expense') return false;
-      if (_search.isNotEmpty && !(t['desc'] as String).toLowerCase().contains(_search.toLowerCase())) return false;
+      if (_tab == 'income' && t.type.toLowerCase() != 'income') return false;
+      if (_tab == 'expense' && t.type.toLowerCase() != 'expense') return false;
+      if (_search.isNotEmpty && !(t.note ?? '').toLowerCase().contains(_search.toLowerCase())) return false;
       return true;
     }).toList();
 
@@ -133,11 +164,11 @@ class _JournalState extends State<Journal> {
                     const SizedBox(height: 16),
                     Row(
                       children: [
-                        _buildSummaryPill('Thu', '43.0M', const Color(0xFF10B981), const Color(0xFF10B981).withOpacity(0.15)),
+                        _buildSummaryPill('Thu', _fmt(_totalIncome), const Color(0xFF10B981), const Color(0xFF10B981).withOpacity(0.15)),
                         const SizedBox(width: 8),
-                        _buildSummaryPill('Chi', '21.5M', const Color(0xFFF43F5E), const Color(0xFFF43F5E).withOpacity(0.15)),
+                        _buildSummaryPill('Chi', _fmt(_totalExpense), const Color(0xFFF43F5E), const Color(0xFFF43F5E).withOpacity(0.15)),
                         const SizedBox(width: 8),
-                        _buildSummaryPill('Còn', '21.4M', const Color(0xFF2DD4BF), const Color(0xFF0D9488).withOpacity(0.15)),
+                        _buildSummaryPill('Còn', _fmt(_totalIncome - _totalExpense), const Color(0xFF2DD4BF), const Color(0xFF0D9488).withOpacity(0.15)),
                       ],
                     ),
                   ],
@@ -206,12 +237,14 @@ class _JournalState extends State<Journal> {
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(24),
                     ),
-                    child: ListView.separated(
+                    child: _isLoading 
+                        ? const Center(child: CircularProgressIndicator(color: Color(0xFF0D9488)))
+                        : ListView.separated(
                       itemCount: filtered.length,
                       separatorBuilder: (context, index) => const Divider(height: 1, color: Color(0xFFF8FAFC)),
                       itemBuilder: (context, index) {
                         final t = filtered[index];
-                        bool isIncome = t['type'] == 'income';
+                        bool isIncome = t.type.toLowerCase() == 'income';
                         return Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                           child: Row(
@@ -224,21 +257,21 @@ class _JournalState extends State<Journal> {
                                   borderRadius: BorderRadius.circular(16),
                                 ),
                                 alignment: Alignment.center,
-                                child: Text(t['emoji'] as String, style: const TextStyle(fontSize: 18)),
+                                child: Text(isIncome ? '💰' : '💸', style: const TextStyle(fontSize: 18)),
                               ),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(t['desc'] as String, style: const TextStyle(fontSize: 14, color: Color(0xFF0F172A), fontWeight: FontWeight.w600)),
+                                    Text(t.note ?? 'Giao dịch', style: const TextStyle(fontSize: 14, color: Color(0xFF0F172A), fontWeight: FontWeight.w600)),
                                     const SizedBox(height: 2),
-                                    Text('${t['cat']} · ${t['date']}', style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
+                                    Text('${t.category} · ${t.transactionDate.day}/${t.transactionDate.month}', style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
                                   ],
                                 ),
                               ),
                               Text(
-                                '${isIncome ? "+" : "-"}${_fmt(t['amount'] as double)}',
+                                '${isIncome ? "+" : "-"}${_fmt(t.amount)}',
                                 style: TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w700,
@@ -533,9 +566,9 @@ class _JournalState extends State<Journal> {
                 ),
               ),
               const SizedBox(height: 12),
-              _buildAddTextField('Mô tả giao dịch'),
+              _buildAddTextField('Mô tả giao dịch', _addNoteController),
               const SizedBox(height: 12),
-              _buildAddTextField('Số tiền (VND)', isNumber: true),
+              _buildAddTextField('Số tiền (VND)', _addAmountController, isNumber: true),
               const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -547,16 +580,39 @@ class _JournalState extends State<Journal> {
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
                     isExpanded: true,
-                    value: 'Ăn uống',
+                    value: _addCategory,
                     items: ['Ăn uống', 'Di chuyển', 'Giải trí', 'Mua sắm', 'Hóa đơn', 'Sức khỏe', 'Thu nhập', 'Thưởng']
                         .map((c) => DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(fontSize: 14)))).toList(),
-                    onChanged: (v) {},
+                    onChanged: (v) {
+                      if (v != null) setState(() => _addCategory = v);
+                    },
                   ),
                 ),
               ),
               const SizedBox(height: 16),
               ElevatedButton(
-                onPressed: () => setState(() => _showAdd = false),
+                onPressed: () async {
+                  final amt = double.tryParse(_addAmountController.text) ?? 0;
+                  if (amt <= 0) return;
+                  final newTx = Transaction(
+                    id: 0,
+                    userId: 1,
+                    amount: amt,
+                    category: _addCategory,
+                    type: _addType,
+                    transactionDate: DateTime.now(),
+                    note: _addNoteController.text,
+                  );
+                  setState(() => _showAdd = false);
+                  try {
+                    await _apiService.addTransaction(newTx);
+                    _addNoteController.clear();
+                    _addAmountController.clear();
+                    _loadData();
+                  } catch (e) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+                  }
+                },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _addType == 'income' ? const Color(0xFF10B981) : const Color(0xFF0D9488),
                   foregroundColor: Colors.white,
@@ -598,8 +654,9 @@ class _JournalState extends State<Journal> {
     );
   }
 
-  Widget _buildAddTextField(String hint, {bool isNumber = false}) {
+  Widget _buildAddTextField(String hint, TextEditingController controller, {bool isNumber = false}) {
     return TextField(
+      controller: controller,
       keyboardType: isNumber ? TextInputType.number : TextInputType.text,
       decoration: InputDecoration(
         hintText: hint,

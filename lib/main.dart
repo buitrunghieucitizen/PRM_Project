@@ -67,11 +67,11 @@ class _AppContainerState extends State<AppContainer> {
       case 'journal':
         return const Journal();
       case 'plan':
-        return const MonthlyPlan();
+        return const MonthlyPlanScreen();
       case 'reports':
         return const Reports();
       case 'goals':
-        return const Goals();
+        return const GoalsScreen();
       default:
         return const SizedBox.shrink();
     }

@@ -1,19 +1,84 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import '../services/api_service.dart';
+import '../models/models.dart';
 
-class Dashboard extends StatelessWidget {
+class Dashboard extends StatefulWidget {
   final Function(String) onNavigate;
 
   const Dashboard({super.key, required this.onNavigate});
 
+  @override
+  State<Dashboard> createState() => _DashboardState();
+}
+
+class _DashboardState extends State<Dashboard> {
+  final ApiService _apiService = ApiService();
+  bool _isLoading = true;
+
+  double _totalIncome = 0;
+  double _totalExpense = 0;
+  double _balance = 0;
+  List<Transaction> _recentTransactions = [];
+  List<MonthlyPlan> _plans = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    setState(() => _isLoading = true);
+    try {
+      final transactions = await _apiService.getTransactions(1);
+      final plans = await _apiService.getPlans(1);
+      
+      double inc = 0;
+      double exp = 0;
+      for (var t in transactions) {
+        if (t.type.toLowerCase() == 'income') inc += t.amount;
+        else exp += t.amount;
+      }
+
+      if (mounted) {
+        setState(() {
+          _totalIncome = inc;
+          _totalExpense = exp;
+          _balance = inc - exp;
+          _recentTransactions = transactions.take(5).toList();
+          _plans = plans;
+        });
+      }
+    } catch (e) {
+      debugPrint(e.toString());
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
   String _fmt(double n) {
     if (n >= 1e9) return '${(n / 1e9).toStringAsFixed(1)}T';
     if (n >= 1e6) return '${(n / 1e6).toStringAsFixed(1)}M';
-    return '${(n / 1e3).toStringAsFixed(0)}K';
+    if (n >= 1e3) return '${(n / 1e3).toStringAsFixed(0)}K';
+    return n.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]}.') + ' ₫';
+  }
+
+  String _fmtCompact(double n) {
+    if (n >= 1e9) return '${(n / 1e9).toStringAsFixed(1)}T';
+    if (n >= 1e6) return '${(n / 1e6).toStringAsFixed(1)}M';
+    if (n >= 1e3) return '${(n / 1e3).toStringAsFixed(0)}K';
+    return n.toStringAsFixed(0);
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
     return Container(
       color: const Color(0xFFF0F4F8),
       child: SingleChildScrollView(
@@ -103,9 +168,9 @@ class Dashboard extends StatelessWidget {
                       children: [
                         Text('Số dư hiện tại', style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 13)),
                         const SizedBox(height: 4),
-                        const Text(
-                          '21.440.000 ₫',
-                          style: TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w800, fontFamily: 'DM Mono'),
+                        Text(
+                          _fmt(_balance),
+                          style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w800, fontFamily: 'DM Mono'),
                         ),
                         const SizedBox(height: 4),
                         Text('Tháng 6, 2026', style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12)),
@@ -130,7 +195,7 @@ class Dashboard extends StatelessWidget {
                                       ],
                                     ),
                                     const SizedBox(height: 2),
-                                    const Text('43.0M ₫', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'DM Mono')),
+                                    Text('${_fmtCompact(_totalIncome)} ₫', style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'DM Mono')),
                                   ],
                                 ),
                               ),
@@ -154,7 +219,7 @@ class Dashboard extends StatelessWidget {
                                       ],
                                     ),
                                     const SizedBox(height: 2),
-                                    const Text('21.5M ₫', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'DM Mono')),
+                                    Text('${_fmtCompact(_totalExpense)} ₫', style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'DM Mono')),
                                   ],
                                 ),
                               ),
@@ -190,11 +255,11 @@ class Dashboard extends StatelessWidget {
                   const SizedBox(height: 16),
                   
                   // Budget Progress
-                  _buildBudgetProgress(),
-                  const SizedBox(height: 16),
+                  if (_plans.isNotEmpty) _buildBudgetProgress(),
+                  if (_plans.isNotEmpty) const SizedBox(height: 16),
                   
                   // Recent Transactions
-                  _buildRecentTransactions(),
+                  if (_recentTransactions.isNotEmpty) _buildRecentTransactions(),
                 ],
               ),
             ),
@@ -206,7 +271,7 @@ class Dashboard extends StatelessWidget {
 
   Widget _buildQuickAction(String label, String emoji, Color bgColor, String? screenTarget) {
     return GestureDetector(
-      onTap: screenTarget != null ? () => onNavigate(screenTarget) : null,
+      onTap: screenTarget != null ? () => widget.onNavigate(screenTarget) : null,
       child: Container(
         width: 76,
         padding: const EdgeInsets.symmetric(vertical: 12),
@@ -397,22 +462,20 @@ class Dashboard extends StatelessWidget {
             children: [
               const Text('Ngân sách tháng', style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF0F172A), fontSize: 14)),
               GestureDetector(
-                onTap: () => onNavigate('plan'),
+                onTap: () => widget.onNavigate('plan'),
                 child: const Text('Xem thêm →', style: TextStyle(color: Color(0xFF0D9488), fontSize: 12, fontWeight: FontWeight.w600)),
               ),
             ],
           ),
           const SizedBox(height: 12),
-          _buildBudgetItem('Ăn uống', '🍜', 4200000, 5000000, const Color(0xFF0D9488)),
-          _buildBudgetItem('Mua sắm', '🛍️', 3850000, 3000000, const Color(0xFFF43F5E)),
-          _buildBudgetItem('Di chuyển', '🚗', 1850000, 2000000, const Color(0xFF3B82F6)),
+          ..._plans.take(3).map((p) => _buildBudgetItem(p.category, '🎯', p.plannedAmount * 0.3, p.plannedAmount, const Color(0xFF0D9488))),
         ],
       ),
     );
   }
 
   Widget _buildBudgetItem(String cat, String emoji, double spent, double budget, Color color) {
-    double pct = (spent / budget) * 100;
+    double pct = budget > 0 ? (spent / budget) * 100 : 0;
     if (pct > 100) pct = 100;
     bool over = spent > budget;
 
@@ -439,7 +502,7 @@ class Dashboard extends StatelessWidget {
                 ],
               ),
               Text(
-                '${_fmt(spent)}/${_fmt(budget)}',
+                '${_fmtCompact(spent)}/${_fmtCompact(budget)}',
                 style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8), fontFamily: 'DM Mono'),
               ),
             ],
@@ -469,13 +532,6 @@ class Dashboard extends StatelessWidget {
   }
 
   Widget _buildRecentTransactions() {
-    final recent = [
-      {'desc': 'Lương tháng 6', 'amount': 38000000, 'type': 'income', 'cat': 'Thu nhập', 'date': '01/06'},
-      {'desc': 'Siêu thị Vinmart', 'amount': 420000, 'type': 'expense', 'cat': 'Ăn uống', 'date': '02/06'},
-      {'desc': 'Grab xe', 'amount': 85000, 'type': 'expense', 'cat': 'Di chuyển', 'date': '03/06'},
-      {'desc': 'Thưởng dự án', 'amount': 5000000, 'type': 'income', 'cat': 'Thưởng', 'date': '05/06'},
-    ];
-
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -489,14 +545,14 @@ class Dashboard extends StatelessWidget {
             children: [
               const Text('Giao dịch gần đây', style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF0F172A), fontSize: 14)),
               GestureDetector(
-                onTap: () => onNavigate('journal'),
+                onTap: () => widget.onNavigate('journal'),
                 child: const Text('Tất cả →', style: TextStyle(color: Color(0xFF0D9488), fontSize: 12, fontWeight: FontWeight.w600)),
               ),
             ],
           ),
           const SizedBox(height: 4),
-          ...recent.map((t) {
-            bool isIncome = t['type'] == 'income';
+          ..._recentTransactions.map((t) {
+            bool isIncome = t.type.toLowerCase() == 'income';
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Row(
@@ -520,13 +576,13 @@ class Dashboard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(t['desc'] as String, style: const TextStyle(fontSize: 13, color: Color(0xFF0F172A), fontWeight: FontWeight.w500)),
-                        Text('${t['cat']} · ${t['date']}', style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
+                        Text(t.note?.isNotEmpty == true ? t.note! : 'Giao dịch', style: const TextStyle(fontSize: 13, color: Color(0xFF0F172A), fontWeight: FontWeight.w500)),
+                        Text('${t.category} · ${t.transactionDate.day.toString().padLeft(2, '0')}/${t.transactionDate.month.toString().padLeft(2, '0')}', style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
                       ],
                     ),
                   ),
                   Text(
-                    '${isIncome ? "+" : "-"}${_fmt(double.parse(t['amount'].toString()))}',
+                    '${isIncome ? "+" : "-"}${_fmtCompact(t.amount)}',
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,

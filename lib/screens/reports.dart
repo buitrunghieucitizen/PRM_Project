@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import '../services/api_service.dart';
+import '../models/models.dart';
 
 class Reports extends StatefulWidget {
   const Reports({super.key});
@@ -11,7 +13,7 @@ class Reports extends StatefulWidget {
 class _ReportsState extends State<Reports> {
   String _period = '6m';
 
-  ApiService _apiService = ApiService();
+  final ApiService _apiService = ApiService();
   bool _isLoading = true;
   List<Transaction> _transactions = [];
 
@@ -125,7 +127,7 @@ class _ReportsState extends State<Reports> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.08),
+                        color: Colors.white.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(16),
                       ),
                       child: Row(
@@ -276,7 +278,7 @@ class _ReportsState extends State<Reports> {
                                 belowBarData: BarAreaData(
                                   show: true,
                                   gradient: LinearGradient(
-                                    colors: [const Color(0xFF0D9488).withOpacity(0.2), const Color(0xFF0D9488).withOpacity(0.0)],
+                                    colors: [const Color(0xFF0D9488).withValues(alpha: 0.2), const Color(0xFF0D9488).withValues(alpha: 0.0)],
                                     begin: Alignment.topCenter,
                                     end: Alignment.bottomCenter,
                                   ),
@@ -292,7 +294,7 @@ class _ReportsState extends State<Reports> {
                                 belowBarData: BarAreaData(
                                   show: true,
                                   gradient: LinearGradient(
-                                    colors: [const Color(0xFFF43F5E).withOpacity(0.15), const Color(0xFFF43F5E).withOpacity(0.0)],
+                                    colors: [const Color(0xFFF43F5E).withValues(alpha: 0.15), const Color(0xFFF43F5E).withValues(alpha: 0.0)],
                                     begin: Alignment.topCenter,
                                     end: Alignment.bottomCenter,
                                   ),
@@ -442,12 +444,12 @@ class _ReportsState extends State<Reports> {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.07),
+          color: Colors.white.withValues(alpha: 0.07),
           borderRadius: BorderRadius.circular(16),
         ),
         child: Column(
           children: [
-            Text(label, style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 10)),
+            Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10)),
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 2),
               child: Text(val, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15, fontFamily: 'DM Mono')),

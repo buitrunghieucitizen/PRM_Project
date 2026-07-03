@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../services/api_service.dart';
+import '../models/models.dart';
 
 class Journal extends StatefulWidget {
   const Journal({super.key});
@@ -16,7 +18,10 @@ class _JournalState extends State<Journal> {
   
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _chatController = TextEditingController();
-  ApiService _apiService = ApiService();
+  final TextEditingController _addNoteController = TextEditingController();
+  final TextEditingController _addAmountController = TextEditingController();
+  String _addCategory = 'Ăn uống';
+  final ApiService _apiService = ApiService();
   bool _isLoading = true;
   List<Transaction> _transactions = [];
 
@@ -36,8 +41,11 @@ class _JournalState extends State<Journal> {
       double inc = 0;
       double exp = 0;
       for (var t in txs) {
-        if (t.type.toLowerCase() == 'income') inc += t.amount;
-        else exp += t.amount;
+        if (t.type.toLowerCase() == 'income') {
+          inc += t.amount;
+        } else {
+          exp += t.amount;
+        }
       }
       if (mounted) {
         setState(() {
@@ -55,7 +63,7 @@ class _JournalState extends State<Journal> {
     }
   }
 
-  List<Map<String, dynamic>> _aiMessages = [
+  final List<Map<String, dynamic>> _aiMessages = [
     {'role': 'assistant', 'text': 'Xin chào! 👋 Tôi có thể phân tích chi tiêu và tư vấn kế hoạch tài chính cho bạn.'},
   ];
 
@@ -136,7 +144,7 @@ class _JournalState extends State<Journal> {
                                 width: 36,
                                 height: 36,
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF0D9488).withOpacity(0.25),
+                                  color: const Color(0xFF0D9488).withValues(alpha: 0.25),
                                   borderRadius: BorderRadius.circular(16),
                                 ),
                                 alignment: Alignment.center,
@@ -164,11 +172,11 @@ class _JournalState extends State<Journal> {
                     const SizedBox(height: 16),
                     Row(
                       children: [
-                        _buildSummaryPill('Thu', _fmt(_totalIncome), const Color(0xFF10B981), const Color(0xFF10B981).withOpacity(0.15)),
+                        _buildSummaryPill('Thu', _fmt(_totalIncome), const Color(0xFF10B981), const Color(0xFF10B981).withValues(alpha: 0.15)),
                         const SizedBox(width: 8),
-                        _buildSummaryPill('Chi', _fmt(_totalExpense), const Color(0xFFF43F5E), const Color(0xFFF43F5E).withOpacity(0.15)),
+                        _buildSummaryPill('Chi', _fmt(_totalExpense), const Color(0xFFF43F5E), const Color(0xFFF43F5E).withValues(alpha: 0.15)),
                         const SizedBox(width: 8),
-                        _buildSummaryPill('Còn', _fmt(_totalIncome - _totalExpense), const Color(0xFF2DD4BF), const Color(0xFF0D9488).withOpacity(0.15)),
+                        _buildSummaryPill('Còn', _fmt(_totalIncome - _totalExpense), const Color(0xFF2DD4BF), const Color(0xFF0D9488).withValues(alpha: 0.15)),
                       ],
                     ),
                   ],
@@ -310,7 +318,7 @@ class _JournalState extends State<Journal> {
         ),
         child: Column(
           children: [
-            Text(label, style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 10)),
+            Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10)),
             Text(val, style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 14, fontFamily: 'DM Mono')),
           ],
         ),
@@ -328,7 +336,7 @@ class _JournalState extends State<Journal> {
           decoration: BoxDecoration(
             color: active ? Colors.white : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
-            boxShadow: active ? [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 4, offset: const Offset(0, 1))] : null,
+            boxShadow: active ? [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 4, offset: const Offset(0, 1))] : null,
           ),
           alignment: Alignment.center,
           child: Text(
@@ -530,7 +538,7 @@ class _JournalState extends State<Journal> {
   Widget _buildAddModal() {
     return Positioned.fill(
       child: Container(
-        color: Colors.black.withOpacity(0.4),
+        color: Colors.black.withValues(alpha: 0.4),
         alignment: Alignment.bottomCenter,
         child: Container(
           decoration: const BoxDecoration(
@@ -581,7 +589,9 @@ class _JournalState extends State<Journal> {
                   child: DropdownButton<String>(
                     isExpanded: true,
                     value: _addCategory,
-                    items: ['Ăn uống', 'Di chuyển', 'Giải trí', 'Mua sắm', 'Hóa đơn', 'Sức khỏe', 'Thu nhập', 'Thưởng']
+                    items: (_addType == 'income' 
+                            ? ['Thu nhập', 'Thưởng', 'Khác'] 
+                            : ['Ăn uống', 'Di chuyển', 'Giải trí', 'Mua sắm', 'Hóa đơn', 'Sức khỏe', 'Khác'])
                         .map((c) => DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(fontSize: 14)))).toList(),
                     onChanged: (v) {
                       if (v != null) setState(() => _addCategory = v);
@@ -633,7 +643,10 @@ class _JournalState extends State<Journal> {
     bool active = _addType == type;
     return Expanded(
       child: GestureDetector(
-        onTap: () => setState(() => _addType = type),
+        onTap: () => setState(() {
+          _addType = type;
+          _addCategory = type == 'income' ? 'Thu nhập' : 'Ăn uống';
+        }),
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(

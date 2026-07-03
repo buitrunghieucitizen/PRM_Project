@@ -72,6 +72,7 @@ class _MonthlyPlanScreenState extends State<MonthlyPlanScreen> {
     }
   }
 
+  @override
   Widget build(BuildContext context) {
     double totalBudget = _plans.fold(0, (s, p) => s + p.plannedAmount);
     double totalSpent = 0;
@@ -142,7 +143,7 @@ class _MonthlyPlanScreenState extends State<MonthlyPlanScreen> {
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.07),
+                        color: Colors.white.withValues(alpha: 0.07),
                         borderRadius: BorderRadius.circular(24),
                       ),
                       child: Row(
@@ -159,7 +160,7 @@ class _MonthlyPlanScreenState extends State<MonthlyPlanScreen> {
                                   child: CircularProgressIndicator(
                                     value: 1.0,
                                     strokeWidth: 8,
-                                    color: Colors.white.withOpacity(0.1),
+                                    color: Colors.white.withValues(alpha: 0.1),
                                   ),
                                 ),
                                 SizedBox(
@@ -236,7 +237,7 @@ class _MonthlyPlanScreenState extends State<MonthlyPlanScreen> {
                                           width: 40,
                                           height: 40,
                                           decoration: BoxDecoration(
-                                            color: const Color(0xFF0D9488).withOpacity(0.15),
+                                            color: const Color(0xFF0D9488).withValues(alpha: 0.15),
                                             borderRadius: BorderRadius.circular(16),
                                           ),
                                           alignment: Alignment.center,
@@ -305,7 +306,7 @@ class _MonthlyPlanScreenState extends State<MonthlyPlanScreen> {
   Widget _buildAddModal() {
     return Positioned.fill(
       child: Container(
-        color: Colors.black.withOpacity(0.4),
+        color: Colors.black.withValues(alpha: 0.4),
         alignment: Alignment.bottomCenter,
         child: Container(
           decoration: const BoxDecoration(
@@ -352,10 +353,31 @@ class _MonthlyPlanScreenState extends State<MonthlyPlanScreen> {
               ),
               const SizedBox(height: 16),
               ElevatedButton(
-                onPressed: () {
-                  // Currently read-only for demo, or we can implement real add
+                onPressed: () async {
+                  final cat = _catController.text.trim();
+                  final amt = double.tryParse(_amtController.text) ?? 0;
+                  if (cat.isEmpty || amt <= 0) return;
+
                   setState(() => _showAdd = false);
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã ghi nhận (Demo)')));
+                  try {
+                    final now = DateTime.now();
+                    final newPlan = MonthlyPlan(
+                      id: 0,
+                      userId: 1,
+                      month: now.month,
+                      year: now.year,
+                      category: cat,
+                      plannedAmount: amt,
+                    );
+                    await _apiService.addPlan(newPlan);
+                    _catController.clear();
+                    _amtController.clear();
+                    _loadData();
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+                    }
+                  }
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF0D9488),

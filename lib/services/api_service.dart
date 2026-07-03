@@ -39,6 +39,19 @@ class ApiService {
     }
   }
 
+  Future<Goal> addGoal(Goal goal) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/Goals'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(goal.toJson()),
+    );
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return Goal.fromJson(json.decode(response.body));
+    } else {
+      throw Exception('Failed to add goal');
+    }
+  }
+
   Future<List<MonthlyPlan>> getPlans(int userId, {int? month, int? year}) async {
     String url = '$baseUrl/MonthlyPlans/$userId';
     if (month != null && year != null) {
@@ -50,6 +63,19 @@ class ApiService {
       return List<MonthlyPlan>.from(l.map((model) => MonthlyPlan.fromJson(model)));
     } else {
       throw Exception('Failed to load plans');
+    }
+  }
+
+  Future<MonthlyPlan> addPlan(MonthlyPlan plan) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/MonthlyPlans'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(plan.toJson()),
+    );
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return MonthlyPlan.fromJson(json.decode(response.body));
+    } else {
+      throw Exception('Failed to add plan');
     }
   }
 

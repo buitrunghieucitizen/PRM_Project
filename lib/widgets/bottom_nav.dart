@@ -23,7 +23,7 @@ class BottomNav extends StatelessWidget {
         border: const Border(top: BorderSide(color: Color(0xFFE2E8F0))),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
+            color: Colors.black.withValues(alpha: 0.06),
             offset: const Offset(0, -4),
             blurRadius: 20,
           ),

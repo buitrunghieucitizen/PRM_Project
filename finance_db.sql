@@ -19,7 +19,8 @@ CREATE TABLE Transactions (
     Category NVARCHAR(50) NOT NULL,
     Type NVARCHAR(20) NOT NULL, -- 'Income' or 'Expense'
     TransactionDate DATETIME2 NOT NULL,
-    Note NVARCHAR(MAX)
+    Note NVARCHAR(MAX),
+    GoalId INT NULL
 );
 
 CREATE TABLE Goals (
@@ -54,3 +55,8 @@ CREATE TABLE AIAdvice (
 
 -- Insert dummy user
 INSERT INTO Users (Username, Email, PasswordHash) VALUES ('testuser', 'test@example.com', 'dummyhash');
+
+ALTER TABLE Transactions 
+ADD CONSTRAINT FK_Transactions_Goals 
+FOREIGN KEY (GoalId) REFERENCES Goals(Id) 
+ON DELETE SET NULL;

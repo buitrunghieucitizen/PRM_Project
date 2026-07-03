@@ -157,7 +157,6 @@ D:\Mobile\Project\PRM_Project\FinanceBackend\obj\Debug\net10.0\refint\FinanceBac
 D:\Mobile\Project\PRM_Project\FinanceBackend\obj\Debug\net10.0\FinanceBackend.pdb
 D:\Mobile\Project\PRM_Project\FinanceBackend\obj\Debug\net10.0\FinanceBackend.genruntimeconfig.cache
 D:\Mobile\Project\PRM_Project\FinanceBackend\obj\Debug\net10.0\ref\FinanceBackend.dll
-D:\Mobile\Project\PRM_Project\FinanceBackend\obj\Debug\net10.0\staticwebassets.upToDateCheck.txt
 D:\Mobile\Project\PRM_Project\FinanceBackend\bin\Debug\net10.0\Swashbuckle.AspNetCore.Swagger.dll
 D:\Mobile\Project\PRM_Project\FinanceBackend\bin\Debug\net10.0\Swashbuckle.AspNetCore.SwaggerGen.dll
 D:\Mobile\Project\PRM_Project\FinanceBackend\bin\Debug\net10.0\Swashbuckle.AspNetCore.SwaggerUI.dll

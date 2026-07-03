@@ -37,8 +37,11 @@ class _DashboardState extends State<Dashboard> {
       double inc = 0;
       double exp = 0;
       for (var t in transactions) {
-        if (t.type.toLowerCase() == 'income') inc += t.amount;
-        else exp += t.amount;
+        if (t.type.toLowerCase() == 'income') {
+          inc += t.amount;
+        } else {
+          exp += t.amount;
+        }
       }
 
       if (mounted) {
@@ -63,7 +66,7 @@ class _DashboardState extends State<Dashboard> {
     if (n >= 1e9) return '${(n / 1e9).toStringAsFixed(1)}T';
     if (n >= 1e6) return '${(n / 1e6).toStringAsFixed(1)}M';
     if (n >= 1e3) return '${(n / 1e3).toStringAsFixed(0)}K';
-    return n.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]}.') + ' ₫';
+    return '${n.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]}.')} ₫';
   }
 
   String _fmtCompact(double n) {
@@ -128,7 +131,7 @@ class _DashboardState extends State<Dashboard> {
                             width: 36,
                             height: 36,
                             decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.08),
+                              color: Colors.white.withValues(alpha: 0.08),
                               borderRadius: BorderRadius.circular(16),
                             ),
                             alignment: Alignment.center,
@@ -166,14 +169,14 @@ class _DashboardState extends State<Dashboard> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Số dư hiện tại', style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 13)),
+                        Text('Số dư hiện tại', style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13)),
                         const SizedBox(height: 4),
                         Text(
                           _fmt(_balance),
                           style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w800, fontFamily: 'DM Mono'),
                         ),
                         const SizedBox(height: 4),
-                        Text('Tháng 6, 2026', style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12)),
+                        Text('Tháng 6, 2026', style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12)),
                         const SizedBox(height: 16),
                         Row(
                           children: [
@@ -181,7 +184,7 @@ class _DashboardState extends State<Dashboard> {
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                                 decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.15),
+                                  color: Colors.white.withValues(alpha: 0.15),
                                   borderRadius: BorderRadius.circular(16),
                                 ),
                                 child: Column(
@@ -189,9 +192,9 @@ class _DashboardState extends State<Dashboard> {
                                   children: [
                                     Row(
                                       children: [
-                                        Icon(Icons.arrow_outward, color: Colors.white.withOpacity(0.8), size: 14),
+                                        Icon(Icons.arrow_outward, color: Colors.white.withValues(alpha: 0.8), size: 14),
                                         const SizedBox(width: 6),
-                                        Text('Thu nhập', style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12)),
+                                        Text('Thu nhập', style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 12)),
                                       ],
                                     ),
                                     const SizedBox(height: 2),
@@ -205,7 +208,7 @@ class _DashboardState extends State<Dashboard> {
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                                 decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.15),
+                                  color: Colors.white.withValues(alpha: 0.15),
                                   borderRadius: BorderRadius.circular(16),
                                 ),
                                 child: Column(
@@ -213,9 +216,9 @@ class _DashboardState extends State<Dashboard> {
                                   children: [
                                     Row(
                                       children: [
-                                        Icon(Icons.south_east, color: Colors.white.withOpacity(0.8), size: 14),
+                                        Icon(Icons.south_east, color: Colors.white.withValues(alpha: 0.8), size: 14),
                                         const SizedBox(width: 6),
-                                        Text('Chi tiêu', style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12)),
+                                        Text('Chi tiêu', style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 12)),
                                       ],
                                     ),
                                     const SizedBox(height: 2),
@@ -410,8 +413,8 @@ class _DashboardState extends State<Dashboard> {
                       show: true,
                       gradient: LinearGradient(
                         colors: [
-                          const Color(0xFF0D9488).withOpacity(0.2),
-                          const Color(0xFF0D9488).withOpacity(0.0),
+                          const Color(0xFF0D9488).withValues(alpha: 0.2),
+                          const Color(0xFF0D9488).withValues(alpha: 0.0),
                         ],
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
@@ -431,8 +434,8 @@ class _DashboardState extends State<Dashboard> {
                       show: true,
                       gradient: LinearGradient(
                         colors: [
-                          const Color(0xFFF43F5E).withOpacity(0.15),
-                          const Color(0xFFF43F5E).withOpacity(0.0),
+                          const Color(0xFFF43F5E).withValues(alpha: 0.15),
+                          const Color(0xFFF43F5E).withValues(alpha: 0.0),
                         ],
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,

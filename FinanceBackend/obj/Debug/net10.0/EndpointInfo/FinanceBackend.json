@@ -613,6 +613,13 @@
           },
           "user": {
             "$ref": "#/components/schemas/User"
+          },
+          "transactions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Transaction"
+            },
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -681,8 +688,16 @@
             "type": "string",
             "nullable": true
           },
+          "goalId": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
           "user": {
             "$ref": "#/components/schemas/User"
+          },
+          "goal": {
+            "$ref": "#/components/schemas/Goal"
           }
         },
         "additionalProperties": false

@@ -21,6 +21,10 @@ class _GoalsScreenState extends State<GoalsScreen> {
   Goal? _selected;
   bool _showAdd = false;
 
+  final TextEditingController _titleController = TextEditingController();
+  final TextEditingController _targetController = TextEditingController();
+  final TextEditingController _currentController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -71,7 +75,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
       if (n >= 1e6) return '${(n / 1e6).toStringAsFixed(0)}M';
       return '${(n / 1e3).toStringAsFixed(0)}K';
     }
-    return n.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]}.') + ' ₫';
+    return '${n.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]}.')} ₫';
   }
 
   void _openAIAdvisor() async {
@@ -161,7 +165,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
                                 margin: const EdgeInsets.only(right: 8),
                                 padding: const EdgeInsets.symmetric(vertical: 12),
                                 decoration: BoxDecoration(
-                                  color: isSelected ? gColor : Colors.white.withOpacity(0.07),
+                                  color: isSelected ? gColor : Colors.white.withValues(alpha: 0.07),
                                   border: Border.all(color: isSelected ? gColor : Colors.transparent, width: 2),
                                   borderRadius: BorderRadius.circular(16),
                                 ),
@@ -169,7 +173,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
                                   children: [
                                     const Text('🎯', style: TextStyle(fontSize: 20)),
                                     Text('$pct%', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14, fontFamily: 'DM Mono')),
-                                    Text(g.title, style: TextStyle(color: isSelected ? Colors.white.withOpacity(0.8) : const Color(0xFF64748B), fontSize: 10), overflow: TextOverflow.ellipsis),
+                                    Text(g.title, style: TextStyle(color: isSelected ? Colors.white.withValues(alpha: 0.8) : const Color(0xFF64748B), fontSize: 10), overflow: TextOverflow.ellipsis),
                                   ],
                                 ),
                               ),
@@ -205,7 +209,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
                                           width: 48,
                                           height: 48,
                                           decoration: BoxDecoration(
-                                            color: const Color(0xFF0D9488).withOpacity(0.15),
+                                            color: const Color(0xFF0D9488).withValues(alpha: 0.15),
                                             borderRadius: BorderRadius.circular(16),
                                           ),
                                           alignment: Alignment.center,
@@ -238,7 +242,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
                                       ),
                                       child: FractionallySizedBox(
                                         alignment: Alignment.centerLeft,
-                                        widthFactor: _selected!.targetAmount > 0 ? ((_currentAmountMap[_selected!.id] ?? _selected!.currentAmount) / _selected!.targetAmount).clamp(0.0, 1.0) as double : 0.0,
+                                        widthFactor: _selected!.targetAmount > 0 ? ((_currentAmountMap[_selected!.id] ?? _selected!.currentAmount) / _selected!.targetAmount).clamp(0.0, 1.0) : 0.0,
                                         child: Container(
                                           decoration: BoxDecoration(
                                             color: const Color(0xFF0D9488),
@@ -331,11 +335,11 @@ class _GoalsScreenState extends State<GoalsScreen> {
                                                 width: 40,
                                                 height: 40,
                                                 decoration: BoxDecoration(
-                                                  color: const Color(0xFF0D9488).withOpacity(0.15),
+                                                  color: const Color(0xFF0D9488).withValues(alpha: 0.15),
                                                   borderRadius: BorderRadius.circular(16),
                                                 ),
                                                 alignment: Alignment.center,
-                                                child: const Text('🎯', style: const TextStyle(fontSize: 20)),
+                                                child: const Text('🎯', style: TextStyle(fontSize: 20)),
                                               ),
                                               const SizedBox(width: 12),
                                               Expanded(
@@ -358,7 +362,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
                                                       ),
                                                       child: FractionallySizedBox(
                                                         alignment: Alignment.centerLeft,
-                                                        widthFactor: g.targetAmount > 0 ? (g.currentAmount / g.targetAmount).clamp(0.0, 1.0) as double : 0.0,
+                                                        widthFactor: g.targetAmount > 0 ? (g.currentAmount / g.targetAmount).clamp(0.0, 1.0) : 0.0,
                                                         child: Container(
                                                           decoration: BoxDecoration(
                                                             color: const Color(0xFF0D9488),
@@ -374,7 +378,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
                                           ),
                                         ),
                                       );
-                                    }).toList(),
+                                    }),
                                   ],
                                 ),
                               ),
@@ -394,7 +398,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
   Widget _buildAddModal() {
     return Positioned.fill(
       child: Container(
-        color: Colors.black.withOpacity(0.4),
+        color: Colors.black.withValues(alpha: 0.4),
         alignment: Alignment.bottomCenter,
         child: Container(
           decoration: const BoxDecoration(
@@ -416,28 +420,37 @@ class _GoalsScreenState extends State<GoalsScreen> {
                 ],
               ),
               const SizedBox(height: 16),
-              ...[
-                'Tên mục tiêu (VD: Mua xe)',
-                'Số tiền mục tiêu (VND)',
-                'Đã tiết kiệm được (VND)',
-                'Tiết kiệm mỗi tháng (VND)'
-              ].map((ph) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: TextField(
-                  decoration: InputDecoration(
-                    hintText: ph,
-                    filled: true,
-                    fillColor: const Color(0xFFF8FAFC),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: Color(0xFFE2E8F0), width: 1.5)),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: Color(0xFF0D9488), width: 1.5)),
-                  ),
-                ),
-              )).toList(),
+              _buildTextField('Tên mục tiêu (VD: Mua xe)', _titleController),
+              _buildTextField('Số tiền mục tiêu (VND)', _targetController, isNumber: true),
+              _buildTextField('Đã tiết kiệm được (VND)', _currentController, isNumber: true),
               ElevatedButton(
-                onPressed: () {
+                onPressed: () async {
+                  final title = _titleController.text.trim();
+                  final target = double.tryParse(_targetController.text) ?? 0;
+                  final current = double.tryParse(_currentController.text) ?? 0;
+                  if (title.isEmpty || target <= 0) return;
+
                   setState(() => _showAdd = false);
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã ghi nhận (Demo)')));
+                  try {
+                    final newGoal = Goal(
+                      id: 0,
+                      userId: 1,
+                      title: title,
+                      targetAmount: target,
+                      currentAmount: current,
+                      deadline: null,
+                      isCompleted: false,
+                    );
+                    await _apiService.addGoal(newGoal);
+                    _titleController.clear();
+                    _targetController.clear();
+                    _currentController.clear();
+                    _loadData();
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+                    }
+                  }
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF0D9488),
@@ -450,6 +463,24 @@ class _GoalsScreenState extends State<GoalsScreen> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTextField(String hint, TextEditingController controller, {bool isNumber = false}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: TextField(
+        controller: controller,
+        keyboardType: isNumber ? TextInputType.number : TextInputType.text,
+        decoration: InputDecoration(
+          hintText: hint,
+          filled: true,
+          fillColor: const Color(0xFFF8FAFC),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: Color(0xFFE2E8F0), width: 1.5)),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: Color(0xFF0D9488), width: 1.5)),
         ),
       ),
     );

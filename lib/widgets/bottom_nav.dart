@@ -14,6 +14,7 @@ class BottomNav extends StatelessWidget {
       {'id': 'plan', 'label': 'Kế hoạch', 'icon': Icons.calendar_today_outlined},
       {'id': 'reports', 'label': 'Báo cáo', 'icon': Icons.bar_chart_outlined},
       {'id': 'goals', 'label': 'Mục tiêu', 'icon': Icons.track_changes_outlined},
+      {'id': 'profile', 'label': 'Hồ Sơ ', 'icon': Icons.account_circle_sharp},
     ];
 
     return Container(

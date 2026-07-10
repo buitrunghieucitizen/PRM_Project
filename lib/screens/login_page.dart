@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../services/api_service.dart';
+import 'register_page.dart';
 
 class LoginPage extends StatefulWidget {
   final VoidCallback onLogin;
@@ -11,19 +13,45 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   bool _isLoading = false;
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
 
-  void _handleLogin() {
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  void _handleLogin() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+
+    if (email.isEmpty || password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Vui lòng nhập đầy đủ email và mật khẩu')),
+      );
+      return;
+    }
+
     setState(() {
       _isLoading = true;
     });
-    Future.delayed(const Duration(milliseconds: 1400), () {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
+
+    final result = await ApiService.login(email, password);
+
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
+      if (result['success']) {
         widget.onLogin();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result['message'] ?? 'Đăng nhập thất bại')),
+        );
       }
-    });
+    }
   }
 
   @override
@@ -176,9 +204,9 @@ class _LoginPageState extends State<LoginPage> {
                       const SizedBox(height: 16),
                       
                       // Inputs
-                      _buildTextField(hint: 'Email', obscureText: false),
+                      _buildTextField(hint: 'Email', obscureText: false, controller: _emailController),
                       const SizedBox(height: 12),
-                      _buildTextField(hint: 'Mật khẩu', obscureText: true),
+                      _buildTextField(hint: 'Mật khẩu', obscureText: true, controller: _passwordController),
                       const SizedBox(height: 20),
                       
                       // Login button
@@ -202,19 +230,29 @@ class _LoginPageState extends State<LoginPage> {
                       
                       const SizedBox(height: 16),
                       Center(
-                        child: RichText(
-                          text: const TextSpan(
-                            text: 'Chưa có tài khoản? ',
-                            style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
-                            children: [
-                              TextSpan(
-                                text: 'Đăng ký miễn phí',
-                                style: TextStyle(
-                                  color: Color(0xFF0D9488),
-                                  fontWeight: FontWeight.w600,
-                                ),
+                        child: GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => RegisterPage(onRegister: widget.onLogin),
                               ),
-                            ],
+                            );
+                          },
+                          child: RichText(
+                            text: const TextSpan(
+                              text: 'Chưa có tài khoản? ',
+                              style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
+                              children: [
+                                TextSpan(
+                                  text: 'Đăng ký miễn phí',
+                                  style: TextStyle(
+                                    color: Color(0xFF0D9488),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -276,8 +314,9 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  Widget _buildTextField({required String hint, required bool obscureText}) {
+  Widget _buildTextField({required String hint, required bool obscureText, TextEditingController? controller}) {
     return TextField(
+      controller: controller,
       obscureText: obscureText,
       decoration: InputDecoration(
         hintText: hint,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/api_service.dart';
 
 class Journal extends StatefulWidget {
   const Journal({super.key});
@@ -12,36 +13,89 @@ class _JournalState extends State<Journal> {
   String _search = '';
   bool _showAI = false;
   bool _showAdd = false;
-  String _addType = 'expense';
+  String _addType = 'Expense';
+  bool _formatWithZeros = false;
+  bool _isLoading = true;
+  bool _isSaving = false;
   
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _chatController = TextEditingController();
 
-  final List<Map<String, dynamic>> _transactions = [
-    {'id': 1, 'desc': 'Lương tháng 6', 'amount': 38000000.0, 'type': 'income', 'cat': 'Thu nhập', 'date': '01/06', 'emoji': '💼'},
-    {'id': 2, 'desc': 'Siêu thị Vinmart', 'amount': 420000.0, 'type': 'expense', 'cat': 'Ăn uống', 'date': '02/06', 'emoji': '🛒'},
-    {'id': 3, 'desc': 'Grab xe', 'amount': 85000.0, 'type': 'expense', 'cat': 'Di chuyển', 'date': '03/06', 'emoji': '🚗'},
-    {'id': 4, 'desc': 'Netflix Premium', 'amount': 260000.0, 'type': 'expense', 'cat': 'Giải trí', 'date': '03/06', 'emoji': '🎬'},
-    {'id': 5, 'desc': 'Thưởng dự án Q2', 'amount': 5000000.0, 'type': 'income', 'cat': 'Thưởng', 'date': '05/06', 'emoji': '🎁'},
-    {'id': 6, 'desc': 'Tiền điện EVN', 'amount': 680000.0, 'type': 'expense', 'cat': 'Hóa đơn', 'date': '06/06', 'emoji': '💡'},
-    {'id': 7, 'desc': 'Bách hóa xanh', 'amount': 320000.0, 'type': 'expense', 'cat': 'Ăn uống', 'date': '07/06', 'emoji': '🛒'},
-    {'id': 8, 'desc': 'Shopee mua sắm', 'amount': 850000.0, 'type': 'expense', 'cat': 'Mua sắm', 'date': '08/06', 'emoji': '🛍️'},
-  ];
+  final TextEditingController _descController = TextEditingController();
+  final TextEditingController _amountController = TextEditingController();
+  String _selectedCat = 'Ăn uống';
+
+  List<Map<String, dynamic>> _transactions = [];
 
   List<Map<String, dynamic>> _aiMessages = [
     {'role': 'assistant', 'text': 'Xin chào! 👋 Tôi có thể phân tích chi tiêu và tư vấn kế hoạch tài chính cho bạn.'},
-    {'role': 'assistant', 'text': '📊 Tháng này bạn chi 28.8% cho ăn uống. Gợi ý: nấu ăn tại nhà 3 ngày/tuần → tiết kiệm ~1.9M ₫/tháng.'},
   ];
 
   bool _thinking = false;
 
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    setState(() => _isLoading = true);
+    try {
+      final txs = await ApiService.getTransactions();
+      setState(() {
+        _transactions = txs.map((t) => {
+          'id': t['id'],
+          'desc': t['description'] ?? '',
+          'amount': (t['amount'] ?? 0).toDouble(),
+          'type': t['type'],
+          'cat': t['category'] ?? '',
+          'date': (t['date'] ?? '').split('T')[0],
+          'emoji': _getEmoji(t['category'] ?? ''),
+        }).toList();
+        
+        // Sort by date descending
+        _transactions.sort((a, b) => b['date'].compareTo(a['date']));
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  String _getEmoji(String cat) {
+    switch (cat) {
+      case 'Ăn uống': return '🍜';
+      case 'Di chuyển': return '🚗';
+      case 'Giải trí': return '🎬';
+      case 'Mua sắm': return '🛍️';
+      case 'Hóa đơn': return '💡';
+      case 'Sức khỏe': return '🏥';
+      case 'Thu nhập': return '💼';
+      case 'Thưởng': return '🎁';
+      default: return '💸';
+    }
+  }
+
   String _fmt(double n) {
+    if (_formatWithZeros) {
+      String s = n.toStringAsFixed(0);
+      String result = '';
+      for (int i = 0; i < s.length; i++) {
+        if (i > 0 && (s.length - i) % 3 == 0) {
+          result += '.';
+        }
+        result += s[i];
+      }
+      return result;
+    }
     if (n >= 1e6) return '${(n / 1e6).toStringAsFixed(1)}M';
     if (n >= 1e3) return '${(n / 1e3).toStringAsFixed(0)}K';
     return n.toStringAsFixed(0);
   }
 
-  void _handleSend() {
+  Future<void> _handleSend() async {
     String text = _chatController.text.trim();
     if (text.isEmpty) return;
     
@@ -51,28 +105,55 @@ class _JournalState extends State<Journal> {
       _thinking = true;
     });
 
-    Future.delayed(const Duration(milliseconds: 1400), () {
+    try {
+      final response = await ApiService.chatAI(text);
       if (!mounted) return;
-      final List<String> r = [
-        "Phân tích: Chi tiêu ăn uống chiếm 29%, cao hơn mức lý tưởng 20%. Thử meal-prep cuối tuần để tiết kiệm 800K/tháng.",
-        "Với tỷ lệ tiết kiệm hiện tại 50%, bạn đang làm rất tốt! Duy trì và đặt auto-transfer vào đầu tháng.",
-        "Danh mục mua sắm vượt 28%. Áp dụng quy tắc 24h chờ đợi trước mỗi lần mua để tránh chi tiêu bốc đồng.",
-      ];
       setState(() {
-        _aiMessages.add({'role': 'assistant', 'text': r[DateTime.now().millisecond % r.length]});
-        _thinking = false;
+        _aiMessages.add({'role': 'assistant', 'text': response['text'] ?? 'Lỗi phản hồi.'});
       });
-    });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _aiMessages.add({'role': 'assistant', 'text': 'Lỗi kết nối tới máy chủ.'});
+      });
+    } finally {
+      if (mounted) setState(() => _thinking = false);
+    }
+  }
+
+  Future<void> _saveTransaction() async {
+    if (_descController.text.isEmpty || _amountController.text.isEmpty) return;
+    setState(() => _isSaving = true);
+    try {
+      await ApiService.addTransaction({
+        'Amount': double.parse(_amountController.text),
+        'Type': _addType,
+        'Category': _selectedCat,
+        'Description': _descController.text,
+      });
+      _descController.clear();
+      _amountController.clear();
+      setState(() => _showAdd = false);
+      await _loadData();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final filtered = _transactions.where((t) {
-      if (_tab == 'income' && t['type'] != 'income') return false;
-      if (_tab == 'expense' && t['type'] != 'expense') return false;
+      if (_tab == 'Income' && t['type'] != 'Income') return false;
+      if (_tab == 'Expense' && t['type'] != 'Expense') return false;
       if (_search.isNotEmpty && !(t['desc'] as String).toLowerCase().contains(_search.toLowerCase())) return false;
       return true;
     }).toList();
+
+    double totalIncome = _transactions.where((t) => t['type'] == 'Income').fold(0, (s, t) => s + (t['amount'] as double));
+    double totalExpense = _transactions.where((t) => t['type'] == 'Expense').fold(0, (s, t) => s + (t['amount'] as double));
+    double balance = totalIncome - totalExpense;
 
     return Stack(
       children: [
@@ -91,10 +172,10 @@ class _JournalState extends State<Journal> {
                       children: [
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
-                          children: const [
-                            Text('Nhật ký Thu / Chi', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
-                            SizedBox(height: 2),
-                            Text('Tháng 6, 2026', style: TextStyle(color: Color(0xFF64748B), fontSize: 12)),
+                          children: [
+                            const Text('Nhật ký Thu / Chi', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
+                            const SizedBox(height: 2),
+                            Text('Tháng ${DateTime.now().month}, ${DateTime.now().year}', style: const TextStyle(color: Color(0xFF64748B), fontSize: 12)),
                           ],
                         ),
                         Row(
@@ -133,11 +214,11 @@ class _JournalState extends State<Journal> {
                     const SizedBox(height: 16),
                     Row(
                       children: [
-                        _buildSummaryPill('Thu', '43.0M', const Color(0xFF10B981), const Color(0xFF10B981).withOpacity(0.15)),
+                        _buildSummaryPill('Thu', _fmt(totalIncome), const Color(0xFF10B981), const Color(0xFF10B981).withOpacity(0.15)),
                         const SizedBox(width: 8),
-                        _buildSummaryPill('Chi', '21.5M', const Color(0xFFF43F5E), const Color(0xFFF43F5E).withOpacity(0.15)),
+                        _buildSummaryPill('Chi', _fmt(totalExpense), const Color(0xFFF43F5E), const Color(0xFFF43F5E).withOpacity(0.15)),
                         const SizedBox(width: 8),
-                        _buildSummaryPill('Còn', '21.4M', const Color(0xFF2DD4BF), const Color(0xFF0D9488).withOpacity(0.15)),
+                        _buildSummaryPill('Còn', _fmt(balance), const Color(0xFF2DD4BF), const Color(0xFF0D9488).withOpacity(0.15)),
                       ],
                     ),
                   ],
@@ -159,8 +240,8 @@ class _JournalState extends State<Journal> {
                       child: Row(
                         children: [
                           _buildTabButton('all', 'Tất cả'),
-                          _buildTabButton('income', 'Thu nhập'),
-                          _buildTabButton('expense', 'Chi tiêu'),
+                          _buildTabButton('Income', 'Thu nhập'),
+                          _buildTabButton('Expense', 'Chi tiêu'),
                         ],
                       ),
                     ),
@@ -197,10 +278,28 @@ class _JournalState extends State<Journal> {
                 ),
               ),
 
+              // View settings
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    const Text('Đầy đủ số', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                    Switch(
+                      value: _formatWithZeros,
+                      onChanged: (val) => setState(() => _formatWithZeros = val),
+                      activeColor: const Color(0xFF0D9488),
+                    ),
+                  ],
+                ),
+              ),
+
               // List
               Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: _isLoading 
+                ? const Center(child: CircularProgressIndicator())
+                : Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                   child: Container(
                     decoration: BoxDecoration(
                       color: Colors.white,
@@ -211,7 +310,7 @@ class _JournalState extends State<Journal> {
                       separatorBuilder: (context, index) => const Divider(height: 1, color: Color(0xFFF8FAFC)),
                       itemBuilder: (context, index) {
                         final t = filtered[index];
-                        bool isIncome = t['type'] == 'income';
+                        bool isIncome = t['type'] == 'Income';
                         return Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                           child: Row(
@@ -527,15 +626,23 @@ class _JournalState extends State<Journal> {
                 ),
                 child: Row(
                   children: [
-                    _buildAddTypeButton('expense', 'Chi tiêu', const Color(0xFFF43F5E)),
-                    _buildAddTypeButton('income', 'Thu nhập', const Color(0xFF10B981)),
+                    _buildAddTypeButton('Expense', 'Chi tiêu', const Color(0xFFF43F5E)),
+                    _buildAddTypeButton('Income', 'Thu nhập', const Color(0xFF10B981)),
                   ],
                 ),
               ),
               const SizedBox(height: 12),
-              _buildAddTextField('Mô tả giao dịch'),
+              TextField(
+                controller: _descController,
+                decoration: _inputDecoration('Mô tả giao dịch'),
+              ),
               const SizedBox(height: 12),
-              _buildAddTextField('Số tiền (VND)', isNumber: true),
+              TextField(
+                controller: _amountController,
+                keyboardType: TextInputType.number,
+                decoration: _inputDecoration('Số tiền (VND)'),
+                style: const TextStyle(fontFamily: 'DM Mono'),
+              ),
               const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -547,24 +654,26 @@ class _JournalState extends State<Journal> {
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
                     isExpanded: true,
-                    value: 'Ăn uống',
+                    value: _selectedCat,
                     items: ['Ăn uống', 'Di chuyển', 'Giải trí', 'Mua sắm', 'Hóa đơn', 'Sức khỏe', 'Thu nhập', 'Thưởng']
                         .map((c) => DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(fontSize: 14)))).toList(),
-                    onChanged: (v) {},
+                    onChanged: (v) {
+                      if (v != null) setState(() => _selectedCat = v);
+                    },
                   ),
                 ),
               ),
               const SizedBox(height: 16),
               ElevatedButton(
-                onPressed: () => setState(() => _showAdd = false),
+                onPressed: _isSaving ? null : _saveTransaction,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: _addType == 'income' ? const Color(0xFF10B981) : const Color(0xFF0D9488),
+                  backgroundColor: _addType == 'Income' ? const Color(0xFF10B981) : const Color(0xFF0D9488),
                   foregroundColor: Colors.white,
                   elevation: 0,
                   minimumSize: const Size(double.infinity, 56),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 ),
-                child: const Text('Lưu giao dịch', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                child: _isSaving ? const CircularProgressIndicator(color: Colors.white) : const Text('Lưu giao dịch', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
               ),
             ],
           ),
@@ -573,11 +682,31 @@ class _JournalState extends State<Journal> {
     );
   }
 
+  InputDecoration _inputDecoration(String hint) {
+    return InputDecoration(
+      hintText: hint,
+      filled: true,
+      fillColor: const Color(0xFFF8FAFC),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Color(0xFFE2E8F0), width: 1.5),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Color(0xFF0D9488), width: 1.5),
+      ),
+    );
+  }
+
   Widget _buildAddTypeButton(String type, String label, Color activeColor) {
     bool active = _addType == type;
     return Expanded(
       child: GestureDetector(
-        onTap: () => setState(() => _addType = type),
+        onTap: () => setState(() {
+          _addType = type;
+          _selectedCat = type == 'Income' ? 'Thu nhập' : 'Ăn uống';
+        }),
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
@@ -594,29 +723,6 @@ class _JournalState extends State<Journal> {
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildAddTextField(String hint, {bool isNumber = false}) {
-    return TextField(
-      keyboardType: isNumber ? TextInputType.number : TextInputType.text,
-      decoration: InputDecoration(
-        hintText: hint,
-        filled: true,
-        fillColor: const Color(0xFFF8FAFC),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: Color(0xFFE2E8F0), width: 1.5),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: Color(0xFF0D9488), width: 1.5),
-        ),
-      ),
-      style: TextStyle(
-        fontFamily: isNumber ? 'DM Mono' : null,
       ),
     );
   }

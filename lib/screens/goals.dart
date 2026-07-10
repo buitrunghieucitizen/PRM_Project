@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:fl_chart/fl_chart.dart';
 
 class Goals extends StatefulWidget {
   const Goals({super.key});
@@ -9,61 +8,15 @@ class Goals extends StatefulWidget {
 }
 
 class _GoalsState extends State<Goals> {
-  final List<Map<String, dynamic>> _goals = [
-    {
-      'id': 1,
-      'name': 'Mua nhà',
-      'emoji': '🏠',
-      'color': const Color(0xFF0D9488),
-      'target': 800000000.0,
-      'current': 120000000.0,
-      'monthly': 8000000.0,
-      'aiMonths': 85,
-      'aiTip': 'Tăng lên 12M/tháng → rút ngắn còn tháng 8/2030',
-      'projection': [
-        {'m': 'T6/26', 'v': 120.0}, {'m': 'T12/26', 'v': 216.0}, {'m': 'T6/27', 'v': 312.0},
-        {'m': 'T12/27', 'v': 408.0}, {'m': 'T6/28', 'v': 504.0}, {'m': 'T12/28', 'v': 600.0},
-        {'m': 'T6/29', 'v': 696.0}, {'m': 'T12/29', 'v': 792.0}, {'m': 'T3/30', 'v': 800.0},
-      ],
-    },
-    {
-      'id': 2,
-      'name': 'Quỹ khẩn cấp',
-      'emoji': '🛡️',
-      'color': const Color(0xFF10B981),
-      'target': 100000000.0,
-      'current': 45000000.0,
-      'monthly': 5000000.0,
-      'aiMonths': 11,
-      'aiTip': 'Đang tiến rất tốt! Hoàn thành vào tháng 5/2027',
-      'projection': [
-        {'m': 'T6/26', 'v': 45.0}, {'m': 'T9/26', 'v': 60.0}, {'m': 'T12/26', 'v': 75.0},
-        {'m': 'T3/27', 'v': 90.0}, {'m': 'T5/27', 'v': 100.0},
-      ],
-    },
-    {
-      'id': 3,
-      'name': 'Du lịch Châu Âu',
-      'emoji': '✈️',
-      'color': const Color(0xFF3B82F6),
-      'target': 80000000.0,
-      'current': 15000000.0,
-      'monthly': 3000000.0,
-      'aiMonths': 22,
-      'aiTip': 'Tăng lên 5M/tháng → đi hè 2027 như kế hoạch',
-      'projection': [
-        {'m': 'T6/26', 'v': 15.0}, {'m': 'T12/26', 'v': 33.0},
-        {'m': 'T6/27', 'v': 51.0}, {'m': 'T12/27', 'v': 69.0}, {'m': 'T4/28', 'v': 80.0},
-      ],
-    },
-  ];
+  List<Map<String, dynamic>> _goals = [];
+  bool _isLoading = true;
 
   final List<Map<String, dynamic>> _initMessages = [
     {'role': 'assistant', 'text': 'Xin chào! 🎯 Tôi phân tích mục tiêu tài chính và dự đoán thời gian đạt được dựa trên dữ liệu thực.'},
     {'role': 'assistant', 'text': '📊 Tóm tắt:\n• Mua nhà: 15% - ~85 tháng\n• Quỹ khẩn cấp: 45% - ~11 tháng ✅\n• Du lịch: 19% - ~22 tháng\n\nƯu tiên hoàn thiện Quỹ khẩn cấp trước!'},
   ];
 
-  late Map<String, dynamic> _selected;
+  Map<String, dynamic>? _selected;
   bool _showAI = false;
   bool _showAdd = false;
   late List<Map<String, dynamic>> _messages;
@@ -73,8 +26,35 @@ class _GoalsState extends State<Goals> {
   @override
   void initState() {
     super.initState();
-    _selected = _goals[0];
     _messages = List.from(_initMessages);
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    try {
+      final goals = await ApiService.getGoals();
+      if (!mounted) return;
+      setState(() {
+        _goals = goals.map<Map<String, dynamic>>((g) => {
+          'id': g['id'],
+          'name': g['name'],
+          'emoji': g['emoji'] ?? '🎯',
+          'color': Color(int.parse((g['colorHex'] ?? '#0D9488').replaceFirst('#', '0xFF'))),
+          'target': (g['targetAmount'] ?? 0).toDouble(),
+          'current': (g['currentAmount'] ?? 0).toDouble(),
+          'monthly': (g['monthlySaving'] ?? 0).toDouble(),
+          'aiMonths': ((g['monthlySaving'] ?? 0) > 0 && (g['targetAmount'] ?? 0) > (g['currentAmount'] ?? 0)) 
+                      ? (((g['targetAmount'] ?? 0) - (g['currentAmount'] ?? 0)) / (g['monthlySaving'] ?? 1)).ceil() 
+                      : 0,
+          'aiTip': 'Phân tích từ AI...',
+          'projection': [],
+        }).toList();
+        if (_goals.isNotEmpty) _selected = _goals[0];
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   String _fmt(double n, [bool short = false]) {
@@ -100,9 +80,9 @@ class _GoalsState extends State<Goals> {
     Future.delayed(const Duration(milliseconds: 1400), () {
       if (!mounted) return;
       final List<String> r = [
-        "Với mục tiêu **${_selected['name']}**: nếu tăng tiết kiệm thêm 2M/tháng, đạt sớm hơn 12 tháng so với dự kiến.",
+        "Với mục tiêu **${_selected!['name']}**: nếu tăng tiết kiệm thêm 2M/tháng, đạt sớm hơn 12 tháng so với dự kiến.",
         "Rủi ro lạm phát ~4%/năm. Nên đặt mục tiêu dự phòng +10% để đảm bảo đủ vốn.",
-        "Tỷ lệ hoàn thành hiện tại ${((_selected['current'] / _selected['target']) * 100).round()}%. Hãy đặt auto-transfer vào ngày 1 hàng tháng!",
+        "Tỷ lệ hoàn thành hiện tại ${_selected!['target'] > 0 ? ((_selected!['current'] / _selected!['target']) * 100).round() : 0}%. Hãy đặt auto-transfer vào ngày 1 hàng tháng!",
       ];
       setState(() {
         _messages.add({'role': 'assistant', 'text': r[DateTime.now().millisecond % r.length]});
@@ -113,6 +93,18 @@ class _GoalsState extends State<Goals> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (_goals.isEmpty) {
+      return Scaffold(
+        body: Center(
+          child: ElevatedButton(
+            onPressed: () => setState(() => _showAdd = true),
+            child: const Text('Thêm mục tiêu đầu tiên'),
+          ),
+        ),
+      );
+    }
+
     return Stack(
       children: [
         Container(
@@ -172,10 +164,10 @@ class _GoalsState extends State<Goals> {
                     const SizedBox(height: 16),
                     
                     // Summary row
-                    Row(
+                      Row(
                       children: _goals.map((g) {
-                        int pct = ((g['current'] / g['target']) * 100).round();
-                        bool isSelected = _selected['id'] == g['id'];
+                        int pct = g['target'] > 0 ? ((g['current'] / g['target']) * 100).round() : 0;
+                        bool isSelected = _selected != null && _selected!['id'] == g['id'];
                         Color gColor = g['color'];
                         return Expanded(
                           child: GestureDetector(
@@ -210,7 +202,7 @@ class _GoalsState extends State<Goals> {
                   padding: const EdgeInsets.all(16),
                   children: [
                     // Selected goal detail
-                    Container(
+                    if (_selected != null) Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
                         color: Colors.white,
@@ -224,26 +216,26 @@ class _GoalsState extends State<Goals> {
                                 width: 48,
                                 height: 48,
                                 decoration: BoxDecoration(
-                                  color: (_selected['color'] as Color).withOpacity(0.15),
+                                  color: (_selected!['color'] as Color).withOpacity(0.15),
                                   borderRadius: BorderRadius.circular(16),
                                 ),
                                 alignment: Alignment.center,
-                                child: Text(_selected['emoji'] as String, style: const TextStyle(fontSize: 24)),
+                                child: Text(_selected!['emoji'] as String, style: const TextStyle(fontSize: 24)),
                               ),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(_selected['name'] as String, style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F172A), fontSize: 16)),
+                                    Text(_selected!['name'] as String, style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F172A), fontSize: 16)),
                                     const SizedBox(height: 2),
-                                    Text('Dự kiến ~${_selected['aiMonths']} tháng', style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12)),
+                                    Text('Dự kiến ~${_selected!['aiMonths']} tháng', style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12)),
                                   ],
                                 ),
                               ),
                               Text(
-                                '${((_selected['current'] / _selected['target']) * 100).round()}%',
-                                style: TextStyle(fontWeight: FontWeight.w800, color: _selected['color'], fontSize: 18, fontFamily: 'DM Mono'),
+                                '${_selected!['target'] > 0 ? ((_selected!['current'] / _selected!['target']) * 100).round() : 0}%',
+                                style: TextStyle(fontWeight: FontWeight.w800, color: _selected!['color'], fontSize: 18, fontFamily: 'DM Mono'),
                               ),
                             ],
                           ),
@@ -257,10 +249,10 @@ class _GoalsState extends State<Goals> {
                             ),
                             child: FractionallySizedBox(
                               alignment: Alignment.centerLeft,
-                              widthFactor: (_selected['current'] / _selected['target']).clamp(0.0, 1.0) as double,
+                              widthFactor: _selected!['target'] > 0 ? (_selected!['current'] / _selected!['target']).clamp(0.0, 1.0) as double : 0.0,
                               child: Container(
                                 decoration: BoxDecoration(
-                                  color: _selected['color'] as Color,
+                                  color: _selected!['color'] as Color,
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                               ),
@@ -270,8 +262,8 @@ class _GoalsState extends State<Goals> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text(_fmt(_selected['current'], true), style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontFamily: 'DM Mono')),
-                              Text(_fmt(_selected['target'], true), style: const TextStyle(fontSize: 12, color: Color(0xFF0F172A), fontWeight: FontWeight.w600, fontFamily: 'DM Mono')),
+                              Text(_fmt(_selected!['current'], true), style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontFamily: 'DM Mono')),
+                              Text(_fmt(_selected!['target'], true), style: const TextStyle(fontSize: 12, color: Color(0xFF0F172A), fontWeight: FontWeight.w600, fontFamily: 'DM Mono')),
                             ],
                           ),
                           
@@ -297,7 +289,7 @@ class _GoalsState extends State<Goals> {
                                       style: const TextStyle(fontSize: 12, color: Color(0xFF374151), height: 1.5),
                                       children: [
                                         const TextSpan(text: 'AI: ', style: TextStyle(color: Color(0xFF0D9488), fontWeight: FontWeight.bold)),
-                                        TextSpan(text: _selected['aiTip'] as String),
+                                        TextSpan(text: _selected!['aiTip'] as String),
                                       ],
                                     ),
                                   ),
@@ -321,7 +313,7 @@ class _GoalsState extends State<Goals> {
                                     children: [
                                       const Text('Tiết kiệm/tháng', style: TextStyle(fontSize: 10, color: Color(0xFF64748B))),
                                       const SizedBox(height: 4),
-                                      Text('${_fmt(_selected['monthly'], true)} ₫', style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF0F172A), fontSize: 14, fontFamily: 'DM Mono')),
+                                      Text('${_fmt(_selected!['monthly'], true)} ₫', style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF0F172A), fontSize: 14, fontFamily: 'DM Mono')),
                                     ],
                                   ),
                                 ),
@@ -338,7 +330,7 @@ class _GoalsState extends State<Goals> {
                                     children: [
                                       const Text('Còn thiếu', style: TextStyle(fontSize: 10, color: Color(0xFF64748B))),
                                       const SizedBox(height: 4),
-                                      Text('${_fmt(_selected['target'] - _selected['current'], true)} ₫', style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFFF43F5E), fontSize: 14, fontFamily: 'DM Mono')),
+                                      Text('${_fmt(_selected!['target'] - _selected!['current'], true)} ₫', style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFFF43F5E), fontSize: 14, fontFamily: 'DM Mono')),
                                     ],
                                   ),
                                 ),
@@ -350,8 +342,7 @@ class _GoalsState extends State<Goals> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Projection chart
-                    Container(
+                    if (_selected != null && _selected!['projection'].isNotEmpty) Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
                         color: Colors.white,
@@ -361,11 +352,8 @@ class _GoalsState extends State<Goals> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text('📈 Dự báo tiến độ', style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF0F172A), fontSize: 14)),
-                          const SizedBox(height: 16),
-                          SizedBox(
-                            height: 160,
-                            child: _buildProjectionChart(),
-                          ),
+                          const SizedBox(height: 12),
+                          _buildTextForecast(),
                         ],
                       ),
                     ),
@@ -387,7 +375,7 @@ class _GoalsState extends State<Goals> {
                           ..._goals.asMap().entries.map((e) {
                             int i = e.key;
                             var g = e.value;
-                            int pct = ((g['current'] / g['target']) * 100).round();
+                            int pct = g['target'] > 0 ? ((g['current'] / g['target']) * 100).round() : 0;
                             return GestureDetector(
                               onTap: () => setState(() => _selected = g),
                               child: Container(
@@ -464,75 +452,47 @@ class _GoalsState extends State<Goals> {
     );
   }
 
-  Widget _buildProjectionChart() {
-    List proj = _selected['projection'];
-    List<FlSpot> spots = [];
-    double maxY = 0;
-    for (int i = 0; i < proj.length; i++) {
-      double val = proj[i]['v'].toDouble();
-      spots.add(FlSpot(i.toDouble(), val));
-      if (val > maxY) maxY = val;
-    }
+  Widget _buildTextForecast() {
+    if (_selected == null || _selected!['projection'] == null) return const SizedBox.shrink();
+    List proj = _selected!['projection'];
+    if (proj.isEmpty) return const SizedBox.shrink();
 
-    return LineChart(
-      LineChartData(
-        gridData: FlGridData(
-          show: true,
-          drawVerticalLine: false,
-          horizontalInterval: maxY / 4 == 0 ? 1 : maxY / 4,
-          getDrawingHorizontalLine: (value) {
-            return FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1, dashArray: [3, 3]);
-          },
-        ),
-        titlesData: FlTitlesData(
-          show: true,
-          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 22,
-              interval: 1,
-              getTitlesWidget: (value, meta) {
-                int index = value.toInt();
-                if (index < 0 || index >= proj.length) return const SizedBox.shrink();
-                return SideTitleWidget(
-                  meta: meta,
-                  child: Text(proj[index]['m'] as String, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 9)),
-                );
-              },
-            ),
+    String currentM = proj.first['m'];
+    double currentV = proj.first['v'];
+    String lastM = proj.last['m'];
+    double lastV = proj.last['v'];
+    
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.timeline, color: Color(0xFF64748B), size: 18),
+              const SizedBox(width: 8),
+              Text('Dự kiến hoàn thành: $lastM', style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF0F172A), fontSize: 14)),
+            ],
           ),
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 28,
-              getTitlesWidget: (value, meta) {
-                if (value == 0) return const SizedBox.shrink();
-                return Text('${value.toInt()}M', style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 9));
-              },
+          const SizedBox(height: 12),
+          RichText(
+            text: TextSpan(
+              style: const TextStyle(fontSize: 13, color: Color(0xFF475569), height: 1.5),
+              children: [
+                const TextSpan(text: 'Dựa trên tốc độ tiết kiệm hiện tại, từ mức '),
+                TextSpan(text: '${currentV}M ($currentM)', style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF0F172A))),
+                const TextSpan(text: ' bạn sẽ đạt '),
+                TextSpan(text: '${lastV}M', style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF0F172A))),
+                const TextSpan(text: ' vào '),
+                TextSpan(text: lastM, style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF0D9488))),
+                const TextSpan(text: '. Cố gắng duy trì nhé!'),
+              ],
             ),
-          ),
-        ),
-        borderData: FlBorderData(show: false),
-        minX: 0,
-        maxX: (proj.length - 1).toDouble(),
-        minY: 0,
-        maxY: maxY * 1.1,
-        lineBarsData: [
-          LineChartBarData(
-            spots: spots,
-            isCurved: false,
-            color: _selected['color'] as Color,
-            barWidth: 2.5,
-            isStrokeCapRound: true,
-            dotData: FlDotData(
-              show: true,
-              getDotPainter: (spot, percent, barData, index) {
-                return FlDotCirclePainter(radius: 4, color: _selected['color'] as Color, strokeWidth: 0);
-              },
-            ),
-            belowBarData: BarAreaData(show: false),
           ),
         ],
       ),

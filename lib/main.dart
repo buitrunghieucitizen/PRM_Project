@@ -7,6 +7,7 @@ import 'screens/journal.dart';
 import 'screens/monthly_plan.dart';
 import 'screens/reports.dart';
 import 'screens/goals.dart';
+import 'screens/profile.dart';
 import 'widgets/bottom_nav.dart';
 
 void main() {
@@ -72,6 +73,8 @@ class _AppContainerState extends State<AppContainer> {
         return const Reports();
       case 'goals':
         return const Goals();
+      case 'profile':
+        return const Profile();
       default:
         return const SizedBox.shrink();
     }

@@ -1,20 +1,47 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import '../services/api_service.dart';
 
-class Dashboard extends StatelessWidget {
+class Dashboard extends StatefulWidget {
   final Function(String) onNavigate;
 
   const Dashboard({super.key, required this.onNavigate});
 
+  @override
+  State<Dashboard> createState() => _DashboardState();
+}
+
+class _DashboardState extends State<Dashboard> {
+  Future<Map<String, dynamic>>? _summaryFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _summaryFuture = ApiService.getSummary();
+  }
+
   String _fmt(double n) {
     if (n >= 1e9) return '${(n / 1e9).toStringAsFixed(1)}T';
     if (n >= 1e6) return '${(n / 1e6).toStringAsFixed(1)}M';
+    if (n == 0) return '0';
     return '${(n / 1e3).toStringAsFixed(0)}K';
   }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _summaryFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator(color: Color(0xFF0D9488)));
+        }
+
+        final data = snapshot.data;
+        final totalIncome = (data?['totalIncome'] as num?)?.toDouble() ?? 0;
+        final totalExpense = (data?['totalExpense'] as num?)?.toDouble() ?? 0;
+        final balance = (data?['balance'] as num?)?.toDouble() ?? 0;
+        
+        return Container(
       color: const Color(0xFFF0F4F8),
       child: SingleChildScrollView(
         child: Column(
@@ -28,34 +55,37 @@ class Dashboard extends StatelessWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Row(
-                        children: [
-                          Container(
-                            width: 36,
-                            height: 36,
-                            decoration: const BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [Color(0xFF0D9488), Color(0xFF10B981)],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
+                      GestureDetector(
+                        onTap: () => widget.onNavigate('profile'),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 36,
+                              height: 36,
+                              decoration: const BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [Color(0xFF0D9488), Color(0xFF10B981)],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                shape: BoxShape.circle,
                               ),
-                              shape: BoxShape.circle,
+                              alignment: Alignment.center,
+                              child: const Text(
+                                'TN',
+                                style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700),
+                              ),
                             ),
-                            alignment: Alignment.center,
-                            child: const Text(
-                              'TN',
-                              style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700),
+                            const SizedBox(width: 12),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: const [
+                                Text('Xin chào 👋', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12)),
+                                Text('Trần Nam', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700)),
+                              ],
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: const [
-                              Text('Xin chào 👋', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12)),
-                              Text('Trần Nam', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700)),
-                            ],
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                       Stack(
                         children: [
@@ -103,9 +133,9 @@ class Dashboard extends StatelessWidget {
                       children: [
                         Text('Số dư hiện tại', style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 13)),
                         const SizedBox(height: 4),
-                        const Text(
-                          '21.440.000 ₫',
-                          style: TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w800, fontFamily: 'DM Mono'),
+                        Text(
+                          '${_fmt(balance)} ₫',
+                          style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w800, fontFamily: 'DM Mono'),
                         ),
                         const SizedBox(height: 4),
                         Text('Tháng 6, 2026', style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12)),
@@ -130,7 +160,7 @@ class Dashboard extends StatelessWidget {
                                       ],
                                     ),
                                     const SizedBox(height: 2),
-                                    const Text('43.0M ₫', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'DM Mono')),
+                                    Text('${_fmt(totalIncome)} ₫', style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'DM Mono')),
                                   ],
                                 ),
                               ),
@@ -154,7 +184,7 @@ class Dashboard extends StatelessWidget {
                                       ],
                                     ),
                                     const SizedBox(height: 2),
-                                    const Text('21.5M ₫', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'DM Mono')),
+                                    Text('${_fmt(totalExpense)} ₫', style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'DM Mono')),
                                   ],
                                 ),
                               ),
@@ -202,11 +232,13 @@ class Dashboard extends StatelessWidget {
         ),
       ),
     );
+      },
+    );
   }
 
   Widget _buildQuickAction(String label, String emoji, Color bgColor, String? screenTarget) {
     return GestureDetector(
-      onTap: screenTarget != null ? () => onNavigate(screenTarget) : null,
+      onTap: screenTarget != null ? () => widget.onNavigate(screenTarget) : null,
       child: Container(
         width: 76,
         padding: const EdgeInsets.symmetric(vertical: 12),
@@ -397,7 +429,7 @@ class Dashboard extends StatelessWidget {
             children: [
               const Text('Ngân sách tháng', style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF0F172A), fontSize: 14)),
               GestureDetector(
-                onTap: () => onNavigate('plan'),
+                onTap: () => widget.onNavigate('plan'),
                 child: const Text('Xem thêm →', style: TextStyle(color: Color(0xFF0D9488), fontSize: 12, fontWeight: FontWeight.w600)),
               ),
             ],
@@ -489,8 +521,8 @@ class Dashboard extends StatelessWidget {
             children: [
               const Text('Giao dịch gần đây', style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF0F172A), fontSize: 14)),
               GestureDetector(
-                onTap: () => onNavigate('journal'),
-                child: const Text('Tất cả →', style: TextStyle(color: Color(0xFF0D9488), fontSize: 12, fontWeight: FontWeight.w600)),
+                onTap: () => widget.onNavigate('journal'),
+                child: const Text('Xem nhật ký →', style: TextStyle(color: Color(0xFF0D9488), fontSize: 12, fontWeight: FontWeight.w600)),
               ),
             ],
           ),

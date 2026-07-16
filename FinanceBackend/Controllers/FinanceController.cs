@@ -2,9 +2,11 @@ using Microsoft.AspNetCore.Mvc;
 using FinanceBackend.Data;
 using FinanceBackend.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authorization;
 
 namespace FinanceBackend.Controllers
 {
+    [Authorize]
     [ApiController]
     [Route("api")]
     public class FinanceController : ControllerBase

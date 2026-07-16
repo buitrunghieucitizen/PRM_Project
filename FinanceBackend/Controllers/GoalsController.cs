@@ -2,9 +2,11 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using FinanceBackend.Data;
 using FinanceBackend.Models;
+using Microsoft.AspNetCore.Authorization;
 
 namespace FinanceBackend.Controllers
 {
+    [Authorize]
     [ApiController]
     [Route("api/[controller]")]
     public class GoalsController : ControllerBase
@@ -35,9 +37,16 @@ namespace FinanceBackend.Controllers
         public async Task<IActionResult> UpdateGoal(int id, [FromBody] Goal goal)
         {
             if (id != goal.Id) return BadRequest();
-            _context.Entry(goal).State = EntityState.Modified;
+            var existingGoal = await _context.Goals.FindAsync(id);
+            if (existingGoal == null) return NotFound();
+
+            existingGoal.Title = goal.Title;
+            existingGoal.TargetAmount = goal.TargetAmount;
+            existingGoal.Deadline = goal.Deadline;
+            existingGoal.IsCompleted = goal.IsCompleted;
+
             await _context.SaveChangesAsync();
-            return Ok(goal);
+            return Ok(existingGoal);
         }
 
         [HttpDelete("{id}")]

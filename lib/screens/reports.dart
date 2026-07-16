@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:provider/provider.dart';
+import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import '../models/models.dart';
 
@@ -22,6 +24,7 @@ class _ReportsState extends State<Reports> {
 
   double _totalIncome = 0;
   double _totalExpense = 0;
+  double _maxY = 50;
 
   @override
   void initState() {
@@ -32,10 +35,10 @@ class _ReportsState extends State<Reports> {
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     try {
-      final txs = await _apiService.getTransactions(1);
+      final txs = await _apiService.getTransactions(ApiService.currentUserId);
       
       // Calculate _monthly for the last 6 months
-      Map<int, Map<String, double>> monthlyMap = {};
+      Map<String, Map<String, double>> monthlyMap = {};
       double inc = 0;
       double exp = 0;
       Map<String, double> catMap = {};
@@ -48,28 +51,50 @@ class _ReportsState extends State<Reports> {
           catMap[t.category] = (catMap[t.category] ?? 0) + t.amount;
         }
         
-        int m = t.transactionDate.month;
-        if (!monthlyMap.containsKey(m)) {
-          monthlyMap[m] = {'inc': 0, 'exp': 0};
+        String mKey = '${t.transactionDate.year}-${t.transactionDate.month}';
+        if (!monthlyMap.containsKey(mKey)) {
+          monthlyMap[mKey] = {'inc': 0, 'exp': 0};
         }
         if (t.type.toLowerCase() == 'income') {
-          monthlyMap[m]!['inc'] = monthlyMap[m]!['inc']! + t.amount;
+          monthlyMap[mKey]!['inc'] = monthlyMap[mKey]!['inc']! + t.amount;
         } else {
-          monthlyMap[m]!['exp'] = monthlyMap[m]!['exp']! + t.amount;
+          monthlyMap[mKey]!['exp'] = monthlyMap[mKey]!['exp']! + t.amount;
         }
       }
 
       List<Map<String, dynamic>> tempMonthly = [];
-      for (int i = 5; i >= 0; i--) {
-        DateTime d = DateTime.now().subtract(Duration(days: 30 * i));
-        int m = d.month;
-        double minc = monthlyMap[m]?['inc'] ?? 0;
-        double mexp = monthlyMap[m]?['exp'] ?? 0;
-        tempMonthly.add({'m': 'T$m', 'inc': minc / 1000000, 'exp': mexp / 1000000}); // Convert to millions for chart
+      int currentYear = DateTime.now().year;
+      int currentMonth = DateTime.now().month;
+      
+      int monthsCount = 6;
+      if (_period == '3m') monthsCount = 3;
+      if (_period == '1y') monthsCount = 12;
+
+      double calculatedMaxY = 10; // minimum 10
+      for (int i = monthsCount - 1; i >= 0; i--) {
+        int m = currentMonth - i;
+        int y = currentYear;
+        while (m <= 0) {
+          m += 12;
+          y -= 1;
+        }
+        String mKey = '$y-$m';
+        double minc = monthlyMap[mKey]?['inc'] ?? 0;
+        double mexp = monthlyMap[mKey]?['exp'] ?? 0;
+        
+        double mincM = minc / 1000000;
+        double mexpM = mexp / 1000000;
+        if (mincM > calculatedMaxY) calculatedMaxY = mincM;
+        if (mexpM > calculatedMaxY) calculatedMaxY = mexpM;
+
+        tempMonthly.add({'m': 'T$m', 'inc': mincM, 'exp': mexpM});
       }
+      
+      // Add a 20% margin to maxY
+      calculatedMaxY = calculatedMaxY * 1.2;
 
       List<Map<String, dynamic>> tempCat = [];
-      List<Color> colors = [const Color(0xFF0D9488), const Color(0xFFF43F5E), const Color(0xFF3B82F6), const Color(0xFF8B5CF6), const Color(0xFF10B981), const Color(0xFFF59E0B)];
+      List<Color> colors = [Colors.blue, Colors.orange, Colors.purple, Colors.teal, Colors.red, Colors.green];
       int colorIdx = 0;
       catMap.forEach((key, value) {
         tempCat.add({'name': key, 'val': value, 'color': colors[colorIdx % colors.length]});
@@ -84,6 +109,7 @@ class _ReportsState extends State<Reports> {
           _catData = tempCat;
           _totalIncome = inc;
           _totalExpense = exp;
+          _maxY = calculatedMaxY;
         });
       }
     } catch (e) {
@@ -96,59 +122,48 @@ class _ReportsState extends State<Reports> {
   }
 
   String _fmt(double n) {
-    if (n >= 1e6) return '${(n / 1e6).toStringAsFixed(1)}M';
-    if (n >= 1e3) return '${(n / 1e3).toStringAsFixed(0)}K';
+    bool showDetailed = Provider.of<ThemeProvider>(context).showDetailedAmount;
+    if (!showDetailed) {
+      if (n >= 1e6) return '${(n / 1e6).toStringAsFixed(1)}M';
+      if (n >= 1e3) return '${(n / 1e3).toStringAsFixed(0)}K';
+    }
     return n.toStringAsFixed(0);
   }
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: const Color(0xFFF0F4F8),
+      color: Theme.of(context).scaffoldBackgroundColor,
       child: Column(
         children: [
           // Header
           Container(
-            padding: const EdgeInsets.only(left: 20, right: 20, top: 16, bottom: 20),
-            color: const Color(0xFF0F172A),
+            padding: EdgeInsets.only(left: 20, right: 20, top: 16, bottom: 20),
+            color: Theme.of(context).textTheme.bodyLarge?.color,
             child: Column(
               children: [
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  mainAxisAlignment: MainAxisAlignment.start,
                   children: [
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
-                      children: const [
-                        Text('Báo cáo tài chính', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
+                      children: [
+                        Text('Báo cáo tài chính', style: TextStyle(color: Theme.of(context).scaffoldBackgroundColor, fontSize: 18, fontWeight: FontWeight.w800)),
                         SizedBox(height: 2),
-                        Text('Phân tích dòng tiền', style: TextStyle(color: Color(0xFF64748B), fontSize: 12)),
+                        Text('Phân tích dòng tiền', style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color?.withValues(alpha: 0.6), fontSize: 12)),
                       ],
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Row(
-                        children: const [
-                          Icon(Icons.download, color: Color(0xFF94A3B8), size: 13),
-                          SizedBox(width: 4),
-                          Text('PDF', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12, fontWeight: FontWeight.w600)),
-                        ],
-                      ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
+                SizedBox(height: 16),
                 
                 // KPI row
                 Row(
                   children: [
                     _buildKPICard('Tổng thu', _fmt(_totalIncome), '', true, Icons.trending_up),
-                    const SizedBox(width: 8),
+                    SizedBox(width: 8),
                     _buildKPICard('Tổng chi', _fmt(_totalExpense), '', false, Icons.trending_down),
-                    const SizedBox(width: 8),
+                    SizedBox(width: 8),
                     _buildKPICard('Tiết kiệm', _totalIncome > 0 ? '${((_totalIncome - _totalExpense) / _totalIncome * 100).toStringAsFixed(0)}%' : '0%', '', true, Icons.trending_up),
                   ],
                 ),
@@ -159,14 +174,14 @@ class _ReportsState extends State<Reports> {
           // Content
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
               children: [
                 // Period selector
                 Container(
-                  padding: const EdgeInsets.all(4),
+                  padding: EdgeInsets.all(4),
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
+                    color: Color(0xFFF0F0F0),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
                     children: [
@@ -176,43 +191,44 @@ class _ReportsState extends State<Reports> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
+                SizedBox(height: 16),
 
                 // Area chart
                 Container(
-                  padding: const EdgeInsets.all(16),
+                  padding: EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(24),
+                    color: Theme.of(context).cardColor,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Theme.of(context).dividerColor),
                   ),
                   child: Column(
                     children: [
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text('Dòng tiền', style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF0F172A), fontSize: 14)),
+                          Text('Dòng tiền', style: TextStyle(fontWeight: FontWeight.w700, color: Theme.of(context).textTheme.bodyLarge?.color, fontSize: 14)),
                           Row(
                             children: [
                               Row(
                                 children: [
-                                  Container(width: 8, height: 8, decoration: const BoxDecoration(color: Color(0xFF0D9488), shape: BoxShape.circle)),
-                                  const SizedBox(width: 4),
-                                  const Text('Thu', style: TextStyle(fontSize: 10, color: Color(0xFF64748B))),
+                                  Container(width: 8, height: 8, decoration: const BoxDecoration(color: Colors.green, shape: BoxShape.circle)),
+                                  SizedBox(width: 4),
+                                  Text('Thu', style: TextStyle(fontSize: 10, color: Theme.of(context).textTheme.bodySmall?.color)),
                                 ],
                               ),
-                              const SizedBox(width: 12),
+                              SizedBox(width: 12),
                               Row(
                                 children: [
-                                  Container(width: 8, height: 8, decoration: const BoxDecoration(color: Color(0xFFF43F5E), shape: BoxShape.circle)),
-                                  const SizedBox(width: 4),
-                                  const Text('Chi', style: TextStyle(fontSize: 10, color: Color(0xFF64748B))),
+                                  Container(width: 8, height: 8, decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle)),
+                                  SizedBox(width: 4),
+                                  Text('Chi', style: TextStyle(fontSize: 10, color: Theme.of(context).textTheme.bodySmall?.color)),
                                 ],
                               ),
                             ],
                           ),
                         ],
                       ),
-                      const SizedBox(height: 16),
+                      SizedBox(height: 16),
                       SizedBox(
                         height: 160,
                         child: LineChart(
@@ -222,29 +238,26 @@ class _ReportsState extends State<Reports> {
                               drawVerticalLine: false,
                               horizontalInterval: 10,
                               getDrawingHorizontalLine: (value) {
-                                return FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1, dashArray: [3, 3]);
+                                return FlLine(color: Color(0xFFF0F0F0), strokeWidth: 1, dashArray: [3, 3]);
                               },
                             ),
                             titlesData: FlTitlesData(
                               show: true,
-                              rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                              topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                              rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                              topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
                               bottomTitles: AxisTitles(
                                 sideTitles: SideTitles(
                                   showTitles: true,
                                   reservedSize: 22,
                                   interval: 1,
                                   getTitlesWidget: (value, meta) {
-                                    const style = TextStyle(color: Color(0xFF94A3B8), fontSize: 10);
+                                    var style = TextStyle(color: Theme.of(context).textTheme.bodySmall?.color?.withValues(alpha: 0.6), fontSize: 10);
                                     Widget text;
-                                    switch (value.toInt()) {
-                                      case 0: text = const Text('T1', style: style); break;
-                                      case 1: text = const Text('T2', style: style); break;
-                                      case 2: text = const Text('T3', style: style); break;
-                                      case 3: text = const Text('T4', style: style); break;
-                                      case 4: text = const Text('T5', style: style); break;
-                                      case 5: text = const Text('T6', style: style); break;
-                                      default: text = const Text('', style: style); break;
+                                    int idx = value.toInt();
+                                    if (idx >= 0 && idx < _monthly.length) {
+                                      text = Text(_monthly[idx]['m'], style: style);
+                                    } else {
+                                      text = Text('', style: style);
                                     }
                                     return SideTitleWidget(meta: meta, child: text);
                                   },
@@ -256,29 +269,29 @@ class _ReportsState extends State<Reports> {
                                   interval: 10,
                                   reservedSize: 28,
                                   getTitlesWidget: (value, meta) {
-                                    if (value == 0) return const SizedBox.shrink();
-                                    return Text('${value.toInt()}M', style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10));
+                                    if (value == 0) return SizedBox.shrink();
+                                    return Text('${value.toInt()}M', style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color?.withValues(alpha: 0.6), fontSize: 10));
                                   },
                                 ),
                               ),
                             ),
                             borderData: FlBorderData(show: false),
                             minX: 0,
-                            maxX: 5,
+                            maxX: _monthly.length - 1.0,
                             minY: 0,
-                            maxY: 50,
+                            maxY: _maxY,
                             lineBarsData: [
                               LineChartBarData(
                                 spots: _monthly.asMap().entries.map((e) => FlSpot(e.key.toDouble(), e.value['inc'] as double)).toList(),
                                 isCurved: true,
-                                color: const Color(0xFF0D9488),
-                                barWidth: 2.5,
+                                color: Colors.green,
+                                barWidth: 2,
                                 isStrokeCapRound: true,
-                                dotData: const FlDotData(show: false),
+                                dotData: FlDotData(show: false),
                                 belowBarData: BarAreaData(
                                   show: true,
                                   gradient: LinearGradient(
-                                    colors: [const Color(0xFF0D9488).withValues(alpha: 0.2), const Color(0xFF0D9488).withValues(alpha: 0.0)],
+                                    colors: [Colors.green.withValues(alpha: 0.1), Colors.green.withValues(alpha: 0.0)],
                                     begin: Alignment.topCenter,
                                     end: Alignment.bottomCenter,
                                   ),
@@ -287,14 +300,14 @@ class _ReportsState extends State<Reports> {
                               LineChartBarData(
                                 spots: _monthly.asMap().entries.map((e) => FlSpot(e.key.toDouble(), e.value['exp'] as double)).toList(),
                                 isCurved: true,
-                                color: const Color(0xFFF43F5E),
-                                barWidth: 2.5,
+                                color: Colors.red,
+                                barWidth: 2,
                                 isStrokeCapRound: true,
-                                dotData: const FlDotData(show: false),
+                                dotData: FlDotData(show: false),
                                 belowBarData: BarAreaData(
                                   show: true,
                                   gradient: LinearGradient(
-                                    colors: [const Color(0xFFF43F5E).withValues(alpha: 0.15), const Color(0xFFF43F5E).withValues(alpha: 0.0)],
+                                    colors: [Colors.red.withValues(alpha: 0.15), Colors.red.withValues(alpha: 0.0)],
                                     begin: Alignment.topCenter,
                                     end: Alignment.bottomCenter,
                                   ),
@@ -307,20 +320,21 @@ class _ReportsState extends State<Reports> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
+                SizedBox(height: 16),
 
                 // Pie + breakdown
                 Container(
-                  padding: const EdgeInsets.all(16),
+                  padding: EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(24),
+                    color: Theme.of(context).cardColor,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Theme.of(context).dividerColor),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Chi tiêu theo danh mục (T6)', style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF0F172A), fontSize: 14)),
-                      const SizedBox(height: 12),
+                      Text('Chi tiêu theo danh mục (T${DateTime.now().month})', style: TextStyle(fontWeight: FontWeight.w700, color: Theme.of(context).textTheme.bodyLarge?.color, fontSize: 14)),
+                      SizedBox(height: 12),
                       Row(
                         children: [
                           SizedBox(
@@ -341,25 +355,25 @@ class _ReportsState extends State<Reports> {
                               ),
                             ),
                           ),
-                          const SizedBox(width: 16),
+                          SizedBox(width: 16),
                           Expanded(
                             child: Column(
                               children: _catData.map((c) {
                                 return Padding(
-                                  padding: const EdgeInsets.only(bottom: 8),
+                                  padding: EdgeInsets.only(bottom: 8),
                                   child: Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
                                       Row(
                                         children: [
                                           Container(width: 8, height: 8, decoration: BoxDecoration(color: c['color'], shape: BoxShape.circle)),
-                                          const SizedBox(width: 6),
-                                          Text(c['name'] as String, style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                                          SizedBox(width: 6),
+                                          Text(c['name'] as String, style: TextStyle(fontSize: 12, color: Theme.of(context).textTheme.bodySmall?.color)),
                                         ],
                                       ),
                                       Text(
                                         _fmt(c['val'] as double),
-                                        style: const TextStyle(fontSize: 11, color: Color(0xFF0F172A), fontWeight: FontWeight.w700, fontFamily: 'DM Mono'),
+                                        style: TextStyle(fontSize: 11, color: Theme.of(context).textTheme.bodyLarge?.color, fontWeight: FontWeight.w700, fontFamily: 'DM Mono'),
                                       ),
                                     ],
                                   ),
@@ -372,20 +386,21 @@ class _ReportsState extends State<Reports> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
+                SizedBox(height: 16),
 
                 // Monthly table
                 Container(
-                  padding: const EdgeInsets.all(16),
+                  padding: EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(24),
+                    color: Theme.of(context).cardColor,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Theme.of(context).dividerColor),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Bảng tổng hợp', style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF0F172A), fontSize: 14)),
-                      const SizedBox(height: 12),
+                      Text('Bảng tổng hợp', style: TextStyle(fontWeight: FontWeight.w700, color: Theme.of(context).textTheme.bodyLarge?.color, fontSize: 14)),
+                      SizedBox(height: 12),
                       Table(
                         columnWidths: const {
                           0: FlexColumnWidth(2),
@@ -395,33 +410,33 @@ class _ReportsState extends State<Reports> {
                         },
                         children: [
                           TableRow(
-                            decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9)))),
+                            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Theme.of(context).dividerColor))),
                             children: ['Tháng', 'Thu', 'Chi', 'Tiết kiệm'].map((h) => Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: Text(h, style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8), fontWeight: FontWeight.w500)),
+                              padding: EdgeInsets.only(bottom: 8),
+                              child: Text(h, style: TextStyle(fontSize: 11, color: Theme.of(context).textTheme.bodySmall?.color?.withValues(alpha: 0.6), fontWeight: FontWeight.w500)),
                             )).toList(),
                           ),
                           ..._monthly.asMap().entries.map((e) {
                             int i = e.key;
                             var m = e.value;
                             return TableRow(
-                              decoration: BoxDecoration(border: i < _monthly.length - 1 ? const Border(bottom: BorderSide(color: Color(0xFFF8FAFC))) : const Border()),
+                              decoration: BoxDecoration(border: i < _monthly.length - 1 ? Border(bottom: BorderSide(color: Color(0xFFF0F0F0))) : Border()),
                               children: [
                                 Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 8),
-                                  child: Text(m['m'] as String, style: const TextStyle(fontSize: 12, color: Color(0xFF374151), fontWeight: FontWeight.w600)),
+                                  padding: EdgeInsets.symmetric(vertical: 8),
+                                  child: Text(m['m'] as String, style: TextStyle(fontSize: 12, color: Theme.of(context).textTheme.bodyLarge?.color, fontWeight: FontWeight.w600)),
                                 ),
                                 Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 8),
-                                  child: Text('${m['inc']}M', style: const TextStyle(fontSize: 11, color: Color(0xFF10B981), fontWeight: FontWeight.w700, fontFamily: 'DM Mono')),
+                                  padding: EdgeInsets.symmetric(vertical: 8),
+                                  child: Text('${m['inc']}M', style: TextStyle(fontSize: 11, color: Theme.of(context).textTheme.bodyLarge?.color, fontWeight: FontWeight.w700, fontFamily: 'DM Mono')),
                                 ),
                                 Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 8),
-                                  child: Text('${m['exp']}M', style: const TextStyle(fontSize: 11, color: Color(0xFFF43F5E), fontWeight: FontWeight.w700, fontFamily: 'DM Mono')),
+                                  padding: EdgeInsets.symmetric(vertical: 8),
+                                  child: Text('${m['exp']}M', style: TextStyle(fontSize: 11, color: Theme.of(context).textTheme.bodySmall?.color, fontWeight: FontWeight.w700, fontFamily: 'DM Mono')),
                                 ),
                                 Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 8),
-                                  child: Text('${((m['inc'] as double) - (m['exp'] as double)).toStringAsFixed(1)}M', style: const TextStyle(fontSize: 11, color: Color(0xFF0D9488), fontWeight: FontWeight.w700, fontFamily: 'DM Mono')),
+                                  padding: EdgeInsets.symmetric(vertical: 8),
+                                  child: Text('${((m['inc'] as double) - (m['exp'] as double)).toStringAsFixed(1)}M', style: TextStyle(fontSize: 11, color: Theme.of(context).textTheme.bodyLarge?.color, fontWeight: FontWeight.w700, fontFamily: 'DM Mono')),
                                 ),
                               ],
                             );
@@ -442,24 +457,24 @@ class _ReportsState extends State<Reports> {
   Widget _buildKPICard(String label, String val, String trend, bool up, IconData icon) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.all(12),
+        padding: EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.07),
-          borderRadius: BorderRadius.circular(16),
+          color: Theme.of(context).cardColor.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(12),
         ),
         child: Column(
           children: [
-            Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10)),
+            Text(label, style: TextStyle(color: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.5), fontSize: 10)),
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Text(val, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15, fontFamily: 'DM Mono')),
+              padding: EdgeInsets.symmetric(vertical: 2),
+              child: Text(val, style: TextStyle(color: Theme.of(context).scaffoldBackgroundColor, fontWeight: FontWeight.w800, fontSize: 15, fontFamily: 'DM Mono')),
             ),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(icon, color: up ? const Color(0xFF10B981) : const Color(0xFFF43F5E), size: 10),
-                const SizedBox(width: 2),
-                Text(trend, style: TextStyle(color: up ? const Color(0xFF10B981) : const Color(0xFFF43F5E), fontSize: 10, fontWeight: FontWeight.w600)),
+                Icon(icon, color: trend.contains('+') ? Colors.green : (trend.contains('-') ? Colors.red : Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.5)), size: 10),
+                SizedBox(width: 2),
+                Text(trend, style: TextStyle(color: trend.contains('+') ? Colors.green : (trend.contains('-') ? Colors.red : Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.5)), fontSize: 10, fontWeight: FontWeight.w600)),
               ],
             ),
           ],
@@ -472,18 +487,21 @@ class _ReportsState extends State<Reports> {
     bool active = _period == p;
     return Expanded(
       child: GestureDetector(
-        onTap: () => setState(() => _period = p),
+        onTap: () {
+          setState(() => _period = p);
+          _loadData();
+        },
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 8),
+          padding: EdgeInsets.symmetric(vertical: 8),
           decoration: BoxDecoration(
-            color: active ? const Color(0xFF0D9488) : Colors.transparent,
+            color: active ? Theme.of(context).primaryColor : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
           ),
           alignment: Alignment.center,
           child: Text(
             label,
             style: TextStyle(
-              color: active ? Colors.white : const Color(0xFF94A3B8),
+              color: active ? Theme.of(context).scaffoldBackgroundColor : Theme.of(context).textTheme.bodySmall?.color?.withValues(alpha: 0.6),
               fontWeight: active ? FontWeight.w700 : FontWeight.w400,
               fontSize: 12,
             ),

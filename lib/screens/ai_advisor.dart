@@ -15,6 +15,7 @@ class _AIAdvisorState extends State<AIAdvisor> {
   final TextEditingController _controller = TextEditingController();
   final List<Map<String, dynamic>> _messages = [];
   bool _isLoading = false;
+  bool _hasApplied = false;
 
   void _sendMessage() async {
     if (_controller.text.trim().isEmpty) return;
@@ -46,17 +47,18 @@ class _AIAdvisorState extends State<AIAdvisor> {
     bool? confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Xác nhận áp dụng'),
-        content: const Text('Bạn có chắc chắn muốn áp dụng các đề xuất từ AI? Thao tác này có thể sửa đổi hoặc thêm mới dữ liệu của bạn.'),
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        title: Text('Xác nhận áp dụng', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color)),
+        content: Text('Bạn có chắc chắn muốn áp dụng các đề xuất từ AI? Thao tác này có thể sửa đổi hoặc thêm mới dữ liệu của bạn.', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Hủy'),
+            child: Text('Hủy', style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color)),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0D9488), foregroundColor: Colors.white),
-            child: const Text('Áp dụng'),
+            style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).primaryColor, foregroundColor: Theme.of(context).scaffoldBackgroundColor),
+            child: Text('Áp dụng'),
           ),
         ],
       ),
@@ -68,8 +70,11 @@ class _AIAdvisorState extends State<AIAdvisor> {
       bool success = await _apiService.applyAIAdvice(advice.id);
       if (success) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã áp dụng thành công!')));
-        Navigator.pop(context, true); // Return true to signal a refresh is needed
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đã áp dụng thành công!')));
+        setState(() {
+          _hasApplied = true;
+          advice.isApplied = true; // prevent re-apply
+        });
       }
     } catch (e) {
       if (!mounted) return;
@@ -79,17 +84,24 @@ class _AIAdvisorState extends State<AIAdvisor> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('AI Tư vấn Tài chính', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-        backgroundColor: const Color(0xFF0F172A),
-        iconTheme: const IconThemeData(color: Colors.white),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) {
+          Navigator.pop(context, _hasApplied);
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+        title: Text('AI Tư vấn Tài chính', style: TextStyle(color: Theme.of(context).scaffoldBackgroundColor, fontWeight: FontWeight.w700)),
+        backgroundColor: Theme.of(context).primaryColor,
+        iconTheme: IconThemeData(color: Theme.of(context).scaffoldBackgroundColor),
       ),
       body: Column(
         children: [
           Expanded(
             child: ListView.builder(
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.all(16),
               itemCount: _messages.length,
               itemBuilder: (context, index) {
                 final msg = _messages[index];
@@ -99,13 +111,13 @@ class _AIAdvisorState extends State<AIAdvisor> {
                   return Align(
                     alignment: Alignment.centerRight,
                     child: Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      margin: EdgeInsets.only(bottom: 12),
+                      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF0D9488),
-                        borderRadius: BorderRadius.circular(16).copyWith(bottomRight: const Radius.circular(4)),
+                        color: Theme.of(context).primaryColor,
+                        borderRadius: BorderRadius.circular(12).copyWith(bottomRight: Radius.circular(4)),
                       ),
-                      child: Text(msg['text'], style: const TextStyle(color: Colors.white)),
+                      child: Text(msg['text'], style: TextStyle(color: Theme.of(context).scaffoldBackgroundColor)),
                     ),
                   );
                 } else {
@@ -113,47 +125,55 @@ class _AIAdvisorState extends State<AIAdvisor> {
                     return Align(
                       alignment: Alignment.centerLeft,
                       child: Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        margin: EdgeInsets.only(bottom: 12),
+                        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFFE4E6),
-                          borderRadius: BorderRadius.circular(16).copyWith(bottomLeft: const Radius.circular(4)),
+                          color: Theme.of(context).colorScheme.surface,
+                          borderRadius: BorderRadius.circular(12).copyWith(bottomLeft: Radius.circular(4)),
                         ),
-                        child: Text(msg['error'], style: const TextStyle(color: Color(0xFFF43F5E))),
+                        child: Text(msg['error'], style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color)),
                       ),
                     );
                   }
 
                   AIAdvice advice = msg['advice'];
-                  bool hasActions = advice.proposedActionsJson != null && advice.proposedActionsJson!.isNotEmpty;
                   return Align(
                     alignment: Alignment.centerLeft,
                     child: Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.all(16),
+                      margin: EdgeInsets.only(bottom: 12),
+                      padding: EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16).copyWith(bottomLeft: const Radius.circular(4)),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                        color: Theme.of(context).colorScheme.surface,
+                        borderRadius: BorderRadius.circular(12).copyWith(bottomLeft: Radius.circular(4)),
+                        border: Border.all(color: Theme.of(context).dividerColor),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(advice.aiResponse, style: const TextStyle(color: Color(0xFF334155), height: 1.5)),
-                          if (hasActions) ...[
-                            const SizedBox(height: 12),
-                            ElevatedButton.icon(
-                              onPressed: () => _applyAdvice(advice),
-                              icon: const Icon(Icons.check_circle_outline, size: 18),
-                              label: const Text('Áp dụng Đề xuất'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF10B981),
-                                foregroundColor: Colors.white,
-                                elevation: 0,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              ),
-                            )
-                          ]
+                          Text(advice.aiResponse, style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color, height: 1.5)),
+                            if (!advice.isApplied) ...[
+                              SizedBox(height: 12),
+                              ElevatedButton.icon(
+                                onPressed: () => _applyAdvice(advice),
+                                icon: Icon(Icons.check_circle_outline, size: 18),
+                                label: Text('Áp dụng Đề xuất'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Theme.of(context).primaryColor,
+                                  foregroundColor: Theme.of(context).scaffoldBackgroundColor,
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                              )
+                            ] else ...[
+                              SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Icon(Icons.check_circle, color: Theme.of(context).textTheme.bodyLarge?.color, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Đã áp dụng', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color, fontWeight: FontWeight.bold)),
+                                ],
+                              )
+                            ]
                         ],
                       ),
                     ),
@@ -163,42 +183,44 @@ class _AIAdvisorState extends State<AIAdvisor> {
             ),
           ),
           if (_isLoading)
-            const Padding(padding: EdgeInsets.all(8.0), child: CircularProgressIndicator()),
+            Padding(padding: EdgeInsets.all(8.0), child: CircularProgressIndicator(color: Theme.of(context).primaryColor)),
           Container(
-            padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+            padding: EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              border: Border(top: BorderSide(color: Theme.of(context).dividerColor)),
             ),
             child: Row(
               children: [
                 Expanded(
                   child: TextField(
                     controller: _controller,
+      style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
                     decoration: InputDecoration(
                       hintText: 'Nhập câu hỏi...',
+                      hintStyle: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color?.withValues(alpha: 0.6)),
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
+                        borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide.none,
                       ),
                       filled: true,
-                      fillColor: const Color(0xFFF1F5F9),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      fillColor: Theme.of(context).colorScheme.surface,
+                      contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                     ),
                     onSubmitted: (_) => _sendMessage(),
                   ),
                 ),
-                const SizedBox(width: 12),
+                SizedBox(width: 12),
                 GestureDetector(
                   onTap: _sendMessage,
                   child: Container(
                     width: 48,
                     height: 48,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF0F172A),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).primaryColor,
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.send, color: Colors.white, size: 20),
+                    child: Icon(Icons.send, color: Theme.of(context).scaffoldBackgroundColor, size: 20),
                   ),
                 ),
               ],
@@ -206,6 +228,6 @@ class _AIAdvisorState extends State<AIAdvisor> {
           ),
         ],
       ),
-    );
+    ));
   }
 }

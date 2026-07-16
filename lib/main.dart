@@ -1,15 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'screens/welcome_screen.dart';
 import 'screens/login_page.dart';
 import 'screens/dashboard.dart';
 import 'screens/journal.dart';
 import 'screens/monthly_plan.dart';
 import 'screens/reports.dart';
 import 'screens/goals.dart';
+import 'screens/onboarding_screen.dart';
+import 'screens/profile_screen.dart';
 import 'widgets/bottom_nav.dart';
+import 'services/api_service.dart';
+import 'package:provider/provider.dart';
+import 'theme/app_theme.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await ApiService.init();
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -24,15 +32,22 @@ class FinanceApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'FinanceAI',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        fontFamily: 'Inter',
-        useMaterial3: true,
-        scaffoldBackgroundColor: const Color(0xFFF0F4F8),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
+      ],
+      child: Consumer<ThemeProvider>(
+        builder: (context, themeProvider, child) {
+          return MaterialApp(
+            title: 'FinanceAI',
+            debugShowCheckedModeBanner: false,
+            themeMode: themeProvider.themeMode,
+            theme: AppTheme.lightTheme,
+            darkTheme: AppTheme.darkTheme,
+            home: const AppContainer(),
+          );
+        },
       ),
-      home: const AppContainer(),
     );
   }
 }
@@ -45,12 +60,34 @@ class AppContainer extends StatefulWidget {
 }
 
 class _AppContainerState extends State<AppContainer> {
-  bool _loggedIn = false;
+  late bool _loggedIn;
   String _screen = 'dashboard';
+  bool _isOnboarding = false;
+  bool _showWelcome = true;
 
-  void _setLoggedIn(bool value) {
+  @override
+  void initState() {
+    super.initState();
+    _loggedIn = ApiService.isLoggedIn;
+  }
+
+  void _setLoggedIn(bool isNewUser) {
     setState(() {
-      _loggedIn = value;
+      _loggedIn = true;
+      if (isNewUser) {
+        _isOnboarding = true;
+      } else {
+        _isOnboarding = false;
+        _screen = 'dashboard';
+      }
+    });
+  }
+  
+  void _setLoggedOut() {
+    setState(() {
+      _loggedIn = false;
+      _isOnboarding = false;
+      _screen = 'dashboard';
     });
   }
 
@@ -61,17 +98,30 @@ class _AppContainerState extends State<AppContainer> {
   }
 
   Widget _buildScreen() {
+    if (_isOnboarding) {
+      return OnboardingScreen(
+        onComplete: () {
+          setState(() {
+            _isOnboarding = false;
+            _screen = 'dashboard';
+          });
+        }
+      );
+    }
+
     switch (_screen) {
       case 'dashboard':
         return Dashboard(onNavigate: _setScreen);
       case 'journal':
         return const Journal();
       case 'plan':
-        return const MonthlyPlanScreen();
+        return MonthlyPlanScreen();
       case 'reports':
-        return const Reports();
+        return Reports();
       case 'goals':
         return const GoalsScreen();
+      case 'profile':
+        return ProfileScreen(onLogout: _setLoggedOut);
       default:
         return const SizedBox.shrink();
     }
@@ -79,22 +129,34 @@ class _AppContainerState extends State<AppContainer> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_loggedIn) {
+    if (_showWelcome) {
       return Scaffold(
-        body: LoginPage(
-          onLogin: () => _setLoggedIn(true),
+        body: WelcomeScreen(
+          onFinish: () {
+            setState(() {
+              _showWelcome = false;
+              _loggedIn = ApiService.isLoggedIn;
+            });
+          },
         ),
       );
     }
 
-    // In a real device, the status bar is handled by the system.
-    // We don't need to manually draw the iOS status bar (time, battery) unless we want to simulate a phone frame.
-    // Since this is a real Flutter app, we will use a Scaffold with BottomNavigationBar.
-    // However, since we built a custom BottomNav to match the UI precisely, we'll use a Column or Stack.
+    if (!_loggedIn) {
+      return Scaffold(
+        body: LoginPage(
+          onLogin: _setLoggedIn,
+        ),
+      );
+    }
 
-    Color statusBarBg = (_screen == 'dashboard' || _screen == 'journal' || _screen == 'plan' || _screen == 'reports' || _screen == 'goals')
-        ? const Color(0xFF0F172A)
-        : const Color(0xFFF0F4F8);
+    if (_isOnboarding) {
+      return Scaffold(
+        body: _buildScreen(),
+      );
+    }
+
+    Color statusBarBg = Theme.of(context).scaffoldBackgroundColor;
 
     return Scaffold(
       backgroundColor: statusBarBg,
@@ -117,3 +179,4 @@ class _AppContainerState extends State<AppContainer> {
     );
   }
 }
+

@@ -1,3 +1,35 @@
+class User {
+  final int id;
+  final String username;
+  final String email;
+  final String? fullName;
+  final String? phoneNumber;
+  final String? jobTitle;
+  final double? monthlySalary;
+
+  User({
+    required this.id,
+    required this.username,
+    required this.email,
+    this.fullName,
+    this.phoneNumber,
+    this.jobTitle,
+    this.monthlySalary,
+  });
+
+  factory User.fromJson(Map<String, dynamic> json) {
+    return User(
+      id: json['id'] ?? 0,
+      username: json['username'] ?? '',
+      email: json['email'] ?? '',
+      fullName: json['fullName'],
+      phoneNumber: json['phoneNumber'],
+      jobTitle: json['jobTitle'],
+      monthlySalary: json['monthlySalary'] != null ? (json['monthlySalary'] as num).toDouble() : null,
+    );
+  }
+}
+
 class Transaction {
   final int id;
   final int userId;
@@ -34,6 +66,7 @@ class Transaction {
 
   Map<String, dynamic> toJson() {
     return {
+      'id': id,
       'userId': userId,
       'amount': amount,
       'category': category,
@@ -78,6 +111,7 @@ class Goal {
 
   Map<String, dynamic> toJson() {
     return {
+      'id': id,
       'userId': userId,
       'title': title,
       'targetAmount': targetAmount,
@@ -118,6 +152,7 @@ class MonthlyPlan {
 
   Map<String, dynamic> toJson() {
     return {
+      'id': id,
       'userId': userId,
       'month': month,
       'year': year,
@@ -133,7 +168,7 @@ class AIAdvice {
   final String userQuery;
   final String aiResponse;
   final String? proposedActionsJson;
-  final bool isApplied;
+  bool isApplied;
 
   AIAdvice({
     required this.id,

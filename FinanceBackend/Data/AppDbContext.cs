@@ -25,6 +25,12 @@ namespace FinanceBackend.Data
                 .WithMany(g => g.Transactions)
                 .HasForeignKey(t => t.GoalId)
                 .OnDelete(DeleteBehavior.SetNull);
+
+            modelBuilder.Entity<Transaction>()
+                .HasOne(t => t.User)
+                .WithMany(u => u.Transactions)
+                .HasForeignKey(t => t.UserId)
+                .OnDelete(DeleteBehavior.NoAction);
         }
     }
 }

@@ -9,6 +9,11 @@ CREATE TABLE Users (
     Username NVARCHAR(50) NOT NULL,
     Email NVARCHAR(100) NOT NULL UNIQUE,
     PasswordHash NVARCHAR(MAX) NOT NULL,
+    GoogleId NVARCHAR(MAX) NULL,
+    PhoneNumber NVARCHAR(MAX) NULL,
+    JobTitle NVARCHAR(MAX) NULL,
+    MonthlySalary DECIMAL(18,2) NULL,
+    IsProfileComplete BIT NOT NULL DEFAULT 0,
     CreatedAt DATETIME2 DEFAULT GETDATE()
 );
 
@@ -53,10 +58,12 @@ CREATE TABLE AIAdvice (
     CreatedAt DATETIME2 DEFAULT GETDATE()
 );
 
--- Insert dummy user
-INSERT INTO Users (Username, Email, PasswordHash) VALUES ('testuser', 'test@example.com', 'dummyhash');
-
 ALTER TABLE Transactions 
 ADD CONSTRAINT FK_Transactions_Goals 
 FOREIGN KEY (GoalId) REFERENCES Goals(Id) 
 ON DELETE SET NULL;
+GO
+
+-- Insert dummy user
+INSERT INTO Users (Username, Email, PasswordHash, IsProfileComplete) VALUES ('testuser', 'test@example.com', 'dummyhash', 1);
+GO

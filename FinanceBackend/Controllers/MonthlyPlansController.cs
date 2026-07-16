@@ -2,9 +2,11 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using FinanceBackend.Data;
 using FinanceBackend.Models;
+using Microsoft.AspNetCore.Authorization;
 
 namespace FinanceBackend.Controllers
 {
+    [Authorize]
     [ApiController]
     [Route("api/[controller]")]
     public class MonthlyPlansController : ControllerBase

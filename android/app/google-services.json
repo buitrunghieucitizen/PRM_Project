@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "570166393947",
+    "project_id": "prm-project-a9cf7",
+    "storage_bucket": "prm-project-a9cf7.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:570166393947:android:73a4ebc64f230d05fa937e",
+        "android_client_info": {
+          "package_name": "com.example.prm_project"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "570166393947-i4qk9m6paq9iftspe4pvdids4a9atqo7.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.prm_project",
+            "certificate_hash": "6d7e5c8b516ddfba2e8abc67f0ad281945658a1e"
+          }
+        },
+        {
+          "client_id": "570166393947-badgngeo9q9lcnkjjnvats4q0gnsab2g.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDFBCIGUICAJQ4xLpjHKB_XnsyHXB-BKUg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "570166393947-badgngeo9q9lcnkjjnvats4q0gnsab2g.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

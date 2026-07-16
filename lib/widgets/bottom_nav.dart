@@ -14,20 +14,14 @@ class BottomNav extends StatelessWidget {
       {'id': 'plan', 'label': 'Kế hoạch', 'icon': Icons.calendar_today_outlined},
       {'id': 'reports', 'label': 'Báo cáo', 'icon': Icons.bar_chart_outlined},
       {'id': 'goals', 'label': 'Mục tiêu', 'icon': Icons.track_changes_outlined},
+      {'id': 'profile', 'label': 'Hồ sơ', 'icon': Icons.person_outline},
     ];
 
     return Container(
-      padding: const EdgeInsets.only(left: 8, right: 8, top: 8, bottom: 24),
+      padding: EdgeInsets.only(left: 8, right: 8, top: 8, bottom: 24),
       decoration: BoxDecoration(
-        color: Colors.white,
-        border: const Border(top: BorderSide(color: Color(0xFFE2E8F0))),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            offset: const Offset(0, -4),
-            blurRadius: 20,
-          ),
-        ],
+        color: Theme.of(context).cardColor,
+        border: Border(top: BorderSide(color: Theme.of(context).dividerColor)),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -41,29 +35,29 @@ class BottomNav extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: isActive ? const Color(0xFF0D9488) : Colors.transparent,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    alignment: Alignment.center,
-                    child: Icon(
-                      icon,
-                      size: 20,
-                      color: isActive ? Colors.white : const Color(0xFF94A3B8),
-                    ),
+                  Icon(
+                    icon,
+                    size: 22,
+                    color: isActive ? Theme.of(context).primaryColor : Theme.of(context).textTheme.bodySmall?.color?.withValues(alpha: 0.6),
                   ),
-                  const SizedBox(height: 4),
+                  SizedBox(height: 4),
                   Text(
                     tab['label'] as String,
                     style: TextStyle(
                       fontSize: 10,
-                      color: isActive ? const Color(0xFF0D9488) : const Color(0xFF94A3B8),
+                      color: isActive ? Theme.of(context).primaryColor : Theme.of(context).textTheme.bodySmall?.color?.withValues(alpha: 0.6),
                       fontWeight: isActive ? FontWeight.w700 : FontWeight.w400,
                       height: 1,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  AnimatedContainer(
+                    duration: Duration(milliseconds: 200),
+                    width: 4,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: isActive ? Theme.of(context).primaryColor : Colors.transparent,
+                      shape: BoxShape.circle,
                     ),
                   ),
                 ],

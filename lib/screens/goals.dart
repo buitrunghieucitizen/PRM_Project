@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:fl_chart/fl_chart.dart';
+import 'package:provider/provider.dart';
+import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import '../models/models.dart';
 import 'ai_advisor.dart';
@@ -20,6 +21,8 @@ class _GoalsScreenState extends State<GoalsScreen> {
 
   Goal? _selected;
   bool _showAdd = false;
+  Goal? _editingGoal;
+  bool _isCompleted = false;
 
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _targetController = TextEditingController();
@@ -34,12 +37,16 @@ class _GoalsScreenState extends State<GoalsScreen> {
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     try {
-      final goals = await _apiService.getGoals(1);
-      final txs = await _apiService.getTransactions(1);
+      final goals = await _apiService.getGoals(ApiService.currentUserId);
+      final txs = await _apiService.getTransactions(ApiService.currentUserId);
       
       Map<int, double> curMap = {};
       Map<int, double> monthMap = {};
       final now = DateTime.now();
+
+      for (var g in goals) {
+        curMap[g.id] = g.currentAmount;
+      }
 
       for (var t in txs) {
         if (t.goalId != null) {
@@ -56,7 +63,13 @@ class _GoalsScreenState extends State<GoalsScreen> {
           _currentAmountMap = curMap;
           _thisMonthAmountMap = monthMap;
           if (_goalsList.isNotEmpty) {
-            _selected = _goalsList[0];
+            if (_selected == null || !_goalsList.any((g) => g.id == _selected!.id)) {
+              _selected = _goalsList[0];
+            } else {
+              _selected = _goalsList.firstWhere((g) => g.id == _selected!.id);
+            }
+          } else {
+            _selected = null;
           }
         });
       }
@@ -70,10 +83,11 @@ class _GoalsScreenState extends State<GoalsScreen> {
   }
 
   String _fmt(double n, [bool short = false]) {
-    if (short) {
+    bool showDetailed = Provider.of<ThemeProvider>(context).showDetailedAmount;
+    if (short && !showDetailed) {
       if (n >= 1e9) return '${(n / 1e9).toStringAsFixed(1)}T';
       if (n >= 1e6) return '${(n / 1e6).toStringAsFixed(0)}M';
-      return '${(n / 1e3).toStringAsFixed(0)}K';
+      if (n >= 1e3) return '${(n / 1e3).toStringAsFixed(0)}K';
     }
     return '${n.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]}.')} ₫';
   }
@@ -81,25 +95,69 @@ class _GoalsScreenState extends State<GoalsScreen> {
   void _openAIAdvisor() async {
     bool? shouldRefresh = await Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => const AIAdvisor(userId: 1)),
+      MaterialPageRoute(builder: (context) => AIAdvisor(userId: ApiService.currentUserId)),
     );
     if (shouldRefresh == true) {
       _loadData();
     }
   }
 
+  void _openAddModal([Goal? g]) {
+    setState(() {
+      _editingGoal = g;
+      if (g != null) {
+        _titleController.text = g.title;
+        _targetController.text = g.targetAmount.toStringAsFixed(0);
+        _currentController.text = g.currentAmount.toStringAsFixed(0);
+        _isCompleted = g.isCompleted;
+      } else {
+        _titleController.clear();
+        _targetController.clear();
+        _currentController.clear();
+        _isCompleted = false;
+      }
+      _showAdd = true;
+    });
+  }
+
+  Future<void> _deleteGoal(Goal g) async {
+    bool? confirm = await showDialog(
+      context: context,
+      builder: (c) => AlertDialog(
+        backgroundColor: Theme.of(context).cardColor,
+        title: Text('Xác nhận xóa', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color)),
+        content: Text('Bạn có chắc chắn muốn xóa mục tiêu này?', style: TextStyle(color: Theme.of(context).textTheme.bodyMedium?.color)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: Text('Hủy', style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color))),
+          TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('Xóa', style: TextStyle(color: Colors.red))),
+        ],
+      )
+    );
+    if (confirm == true) {
+      try {
+        await _apiService.deleteGoal(g.id);
+        if (mounted) setState(() => _showAdd = false);
+        _loadData();
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi xóa: $e')));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Stack(
       children: [
         Container(
-          color: const Color(0xFFF0F4F8),
+          color: theme.scaffoldBackgroundColor,
           child: Column(
             children: [
               // Header
               Container(
                 padding: const EdgeInsets.only(left: 20, right: 20, top: 16, bottom: 20),
-                color: const Color(0xFF0F172A),
+                color: theme.primaryColor,
                 child: Column(
                   children: [
                     Row(
@@ -107,10 +165,10 @@ class _GoalsScreenState extends State<GoalsScreen> {
                       children: [
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
-                          children: const [
-                            Text('Mục tiêu tài chính', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
-                            SizedBox(height: 2),
-                            Text('Theo dõi & dự đoán', style: TextStyle(color: Color(0xFF64748B), fontSize: 12)),
+                          children: [
+                            Text('Mục tiêu tài chính', style: TextStyle(color: theme.scaffoldBackgroundColor, fontSize: 18, fontWeight: FontWeight.w800)),
+                            const SizedBox(height: 2),
+                            Text('Theo dõi & dự đoán', style: TextStyle(color: theme.scaffoldBackgroundColor.withValues(alpha: 0.5), fontSize: 12)),
                           ],
                         ),
                         Row(
@@ -121,25 +179,25 @@ class _GoalsScreenState extends State<GoalsScreen> {
                                 width: 36,
                                 height: 36,
                                 decoration: BoxDecoration(
-                                  gradient: const LinearGradient(colors: [Color(0xFF8B5CF6), Color(0xFFD946EF)]),
-                                  borderRadius: BorderRadius.circular(16),
+                                  color: theme.scaffoldBackgroundColor.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
                                 alignment: Alignment.center,
-                                child: const Icon(Icons.auto_awesome, color: Colors.white, size: 18),
+                                child: Icon(Icons.auto_awesome, color: theme.scaffoldBackgroundColor, size: 18),
                               ),
                             ),
                             const SizedBox(width: 8),
                             GestureDetector(
-                              onTap: () => setState(() => _showAdd = true),
+                              onTap: () => _openAddModal(),
                               child: Container(
                                 width: 36,
                                 height: 36,
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF0D9488),
-                                  borderRadius: BorderRadius.circular(16),
+                                  color: theme.scaffoldBackgroundColor,
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
                                 alignment: Alignment.center,
-                                child: const Icon(Icons.add, color: Colors.white, size: 18),
+                                child: Icon(Icons.add, color: theme.primaryColor, size: 18),
                               ),
                             ),
                           ],
@@ -157,7 +215,6 @@ class _GoalsScreenState extends State<GoalsScreen> {
                             double cur = _currentAmountMap[g.id] ?? g.currentAmount;
                             int pct = g.targetAmount > 0 ? ((cur / g.targetAmount) * 100).round() : 0;
                             bool isSelected = _selected?.id == g.id;
-                            Color gColor = const Color(0xFF0D9488);
                             return GestureDetector(
                               onTap: () => setState(() => _selected = g),
                               child: Container(
@@ -165,15 +222,15 @@ class _GoalsScreenState extends State<GoalsScreen> {
                                 margin: const EdgeInsets.only(right: 8),
                                 padding: const EdgeInsets.symmetric(vertical: 12),
                                 decoration: BoxDecoration(
-                                  color: isSelected ? gColor : Colors.white.withValues(alpha: 0.07),
-                                  border: Border.all(color: isSelected ? gColor : Colors.transparent, width: 2),
-                                  borderRadius: BorderRadius.circular(16),
+                                  color: isSelected ? theme.scaffoldBackgroundColor : theme.scaffoldBackgroundColor.withValues(alpha: 0.07),
+                                  border: Border.all(color: isSelected ? theme.scaffoldBackgroundColor : Colors.transparent, width: 2),
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: Column(
                                   children: [
-                                    const Text('🎯', style: TextStyle(fontSize: 20)),
-                                    Text('$pct%', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14, fontFamily: 'DM Mono')),
-                                    Text(g.title, style: TextStyle(color: isSelected ? Colors.white.withValues(alpha: 0.8) : const Color(0xFF64748B), fontSize: 10), overflow: TextOverflow.ellipsis),
+                                    Icon(Icons.flag_outlined, size: 20, color: isSelected ? theme.primaryColor : theme.scaffoldBackgroundColor),
+                                    Text('$pct%', style: TextStyle(color: isSelected ? theme.primaryColor : theme.scaffoldBackgroundColor, fontWeight: FontWeight.w800, fontSize: 14)),
+                                    Text(g.title, style: TextStyle(color: isSelected ? theme.primaryColor.withValues(alpha: 0.6) : theme.scaffoldBackgroundColor.withValues(alpha: 0.6), fontSize: 10), overflow: TextOverflow.ellipsis),
                                   ],
                                 ),
                               ),
@@ -188,118 +245,131 @@ class _GoalsScreenState extends State<GoalsScreen> {
               // Content
               Expanded(
                 child: _isLoading
-                    ? const Center(child: CircularProgressIndicator())
+                    ? Center(child: CircularProgressIndicator(color: theme.primaryColor))
                     : _goalsList.isEmpty || _selected == null
-                        ? const Center(child: Text('Chưa có mục tiêu nào. Hãy ấn nút + để tạo mới!'))
+                        ? Center(child: Text('Chưa có mục tiêu nào. Hãy ấn nút + để tạo mới!', style: TextStyle(color: theme.textTheme.bodySmall?.color)))
                         : ListView(
                             padding: const EdgeInsets.all(16),
                             children: [
                               // Selected goal detail
-                              Container(
-                                padding: const EdgeInsets.all(16),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(24),
-                                ),
-                                child: Column(
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Container(
-                                          width: 48,
-                                          height: 48,
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFF0D9488).withValues(alpha: 0.15),
-                                            borderRadius: BorderRadius.circular(16),
-                                          ),
-                                          alignment: Alignment.center,
-                                          child: const Text('🎯', style: TextStyle(fontSize: 24)),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text(_selected!.title, style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F172A), fontSize: 16)),
-                                              const SizedBox(height: 2),
-                                              const Text('Mục tiêu', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12)),
-                                            ],
-                                          ),
-                                        ),
-                                        Text(
-                                          '${_selected!.targetAmount > 0 ? (((_currentAmountMap[_selected!.id] ?? _selected!.currentAmount) / _selected!.targetAmount) * 100).round() : 0}%',
-                                          style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0D9488), fontSize: 18, fontFamily: 'DM Mono'),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 12),
-                                    Container(
-                                      height: 12,
-                                      width: double.infinity,
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFF1F5F9),
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: FractionallySizedBox(
-                                        alignment: Alignment.centerLeft,
-                                        widthFactor: _selected!.targetAmount > 0 ? ((_currentAmountMap[_selected!.id] ?? _selected!.currentAmount) / _selected!.targetAmount).clamp(0.0, 1.0) : 0.0,
-                                        child: Container(
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFF0D9488),
-                                            borderRadius: BorderRadius.circular(6),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text(_fmt(_currentAmountMap[_selected!.id] ?? _selected!.currentAmount, true), style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontFamily: 'DM Mono')),
-                                        Text(_fmt(_selected!.targetAmount, true), style: const TextStyle(fontSize: 12, color: Color(0xFF0F172A), fontWeight: FontWeight.w600, fontFamily: 'DM Mono')),
-                                      ],
-                                    ),
-                                    
-                                    // Stats
-                                    const SizedBox(height: 12),
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: Container(
-                                            padding: const EdgeInsets.all(12),
+                              InkWell(
+                                onTap: () => _openAddModal(_selected!),
+                                borderRadius: BorderRadius.circular(16),
+                                child: Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: theme.cardColor,
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(color: theme.dividerColor),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Container(
+                                            width: 48,
+                                            height: 48,
                                             decoration: BoxDecoration(
-                                              color: const Color(0xFFF8FAFC),
-                                              borderRadius: BorderRadius.circular(16),
+                                              color: theme.colorScheme.surface,
+                                              borderRadius: BorderRadius.circular(12),
                                             ),
+                                            alignment: Alignment.center,
+                                            child: Icon(Icons.flag_outlined, size: 24, color: theme.primaryColor),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
                                             child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
                                               children: [
-                                                const Text('Còn thiếu', style: TextStyle(fontSize: 10, color: Color(0xFF64748B))),
-                                                const SizedBox(height: 4),
-                                                Text('${_fmt(_selected!.targetAmount - (_currentAmountMap[_selected!.id] ?? _selected!.currentAmount), true)} ₫', style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFFF43F5E), fontSize: 14, fontFamily: 'DM Mono')),
+                                                Text(_selected!.title, style: TextStyle(fontWeight: FontWeight.w800, color: theme.textTheme.bodyLarge?.color, fontSize: 16)),
+                                                const SizedBox(height: 2),
+                                                Text(_selected!.isCompleted ? 'Đã hoàn thành' : 'Mục tiêu (Bấm để sửa)', style: TextStyle(color: _selected!.isCompleted ? Colors.green : theme.textTheme.bodySmall?.color, fontSize: 12, fontWeight: _selected!.isCompleted ? FontWeight.bold : FontWeight.normal)),
                                               ],
                                             ),
                                           ),
+                                          Icon(Icons.edit, size: 20, color: theme.primaryColor),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 16),
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text('Tiến độ', style: TextStyle(color: theme.textTheme.bodySmall?.color, fontSize: 12)),
+                                          Text(
+                                            '${_selected!.targetAmount > 0 ? (((_currentAmountMap[_selected!.id] ?? _selected!.currentAmount) / _selected!.targetAmount) * 100).round() : 0}%',
+                                            style: TextStyle(fontWeight: FontWeight.w800, color: theme.primaryColor, fontSize: 18),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Container(
+                                        height: 12,
+                                        width: double.infinity,
+                                        decoration: BoxDecoration(
+                                          color: theme.dividerColor,
+                                          borderRadius: BorderRadius.circular(6),
                                         ),
-                                        const SizedBox(width: 8),
-                                        Expanded(
+                                        child: FractionallySizedBox(
+                                          alignment: Alignment.centerLeft,
+                                          widthFactor: _selected!.targetAmount > 0 ? ((_currentAmountMap[_selected!.id] ?? _selected!.currentAmount) / _selected!.targetAmount).clamp(0.0, 1.0) : 0.0,
                                           child: Container(
-                                            padding: const EdgeInsets.all(12),
                                             decoration: BoxDecoration(
-                                              color: const Color(0xFFF0FDFA),
-                                              borderRadius: BorderRadius.circular(16),
-                                            ),
-                                            child: Column(
-                                              children: [
-                                                const Text('Tháng này', style: TextStyle(fontSize: 10, color: Color(0xFF0D9488))),
-                                                const SizedBox(height: 4),
-                                                Text('+ ${_fmt(_thisMonthAmountMap[_selected!.id] ?? 0, true)} ₫', style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF0D9488), fontSize: 14, fontFamily: 'DM Mono')),
-                                              ],
+                                              color: theme.primaryColor,
+                                              borderRadius: BorderRadius.circular(6),
                                             ),
                                           ),
                                         ),
-                                      ],
-                                    ),
-                                  ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text(_fmt(_currentAmountMap[_selected!.id] ?? _selected!.currentAmount, true), style: TextStyle(fontSize: 12, color: theme.textTheme.bodySmall?.color)),
+                                          Text(_fmt(_selected!.targetAmount, true), style: TextStyle(fontSize: 12, color: theme.primaryColor, fontWeight: FontWeight.w600)),
+                                        ],
+                                      ),
+                                      
+                                      // Stats
+                                      const SizedBox(height: 12),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Container(
+                                              padding: const EdgeInsets.all(12),
+                                              decoration: BoxDecoration(
+                                                color: theme.colorScheme.surface,
+                                                borderRadius: BorderRadius.circular(12),
+                                              ),
+                                              child: Column(
+                                                children: [
+                                                  Text('Còn thiếu', style: TextStyle(fontSize: 10, color: theme.textTheme.bodySmall?.color)),
+                                                  const SizedBox(height: 4),
+                                                  Text('${_fmt(_selected!.targetAmount - (_currentAmountMap[_selected!.id] ?? _selected!.currentAmount), true)} ₫', style: TextStyle(fontWeight: FontWeight.w700, color: theme.primaryColor, fontSize: 14)),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Container(
+                                              padding: const EdgeInsets.all(12),
+                                              decoration: BoxDecoration(
+                                                color: theme.colorScheme.surface,
+                                                borderRadius: BorderRadius.circular(12),
+                                              ),
+                                              child: Column(
+                                                children: [
+                                                  Text('Tháng này', style: TextStyle(fontSize: 10, color: theme.textTheme.bodySmall?.color)),
+                                                  const SizedBox(height: 4),
+                                                  Text('+ ${_fmt(_thisMonthAmountMap[_selected!.id] ?? 0, true)} ₫', style: TextStyle(fontWeight: FontWeight.w700, color: theme.primaryColor, fontSize: 14)),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                               const SizedBox(height: 16),
@@ -307,27 +377,29 @@ class _GoalsScreenState extends State<GoalsScreen> {
                               // All goals list
                               Container(
                                 decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(24),
+                                  color: theme.cardColor,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(color: theme.dividerColor),
                                 ),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const Padding(
-                                      padding: EdgeInsets.only(left: 16, top: 16, bottom: 8),
-                                      child: Text('Tất cả mục tiêu', style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF0F172A), fontSize: 14)),
+                                    Padding(
+                                      padding: const EdgeInsets.only(left: 16, top: 16, bottom: 8),
+                                      child: Text('Tất cả mục tiêu', style: TextStyle(fontWeight: FontWeight.w700, color: theme.primaryColor, fontSize: 14)),
                                     ),
                                     ..._goalsList.asMap().entries.map((e) {
                                       int i = e.key;
                                       var g = e.value;
                                       double cur = _currentAmountMap[g.id] ?? g.currentAmount;
                                       int pct = g.targetAmount > 0 ? ((cur / g.targetAmount) * 100).round() : 0;
-                                      return GestureDetector(
+                                      return InkWell(
                                         onTap: () => setState(() => _selected = g),
+                                        borderRadius: BorderRadius.circular(16),
                                         child: Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                                           decoration: BoxDecoration(
-                                            border: i > 0 ? const Border(top: BorderSide(color: Color(0xFFF8FAFC))) : null,
+                                            border: i > 0 ? Border(top: BorderSide(color: theme.colorScheme.surface)) : null,
                                           ),
                                           child: Row(
                                             children: [
@@ -335,11 +407,11 @@ class _GoalsScreenState extends State<GoalsScreen> {
                                                 width: 40,
                                                 height: 40,
                                                 decoration: BoxDecoration(
-                                                  color: const Color(0xFF0D9488).withValues(alpha: 0.15),
-                                                  borderRadius: BorderRadius.circular(16),
+                                                  color: theme.colorScheme.surface,
+                                                  borderRadius: BorderRadius.circular(12),
                                                 ),
                                                 alignment: Alignment.center,
-                                                child: const Text('🎯', style: TextStyle(fontSize: 20)),
+                                                child: Icon(Icons.flag_outlined, size: 20, color: theme.primaryColor),
                                               ),
                                               const SizedBox(width: 12),
                                               Expanded(
@@ -348,8 +420,11 @@ class _GoalsScreenState extends State<GoalsScreen> {
                                                     Row(
                                                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                                       children: [
-                                                        Text(g.title, style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF0F172A), fontSize: 14)),
-                                                        Text('$pct%', style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF0D9488), fontSize: 13, fontFamily: 'DM Mono')),
+                                                        Text(g.title, style: TextStyle(fontWeight: FontWeight.w600, color: theme.textTheme.bodyLarge?.color, fontSize: 14)),
+                                                        if (g.isCompleted)
+                                                          const Icon(Icons.check_circle, color: Colors.green, size: 16)
+                                                        else
+                                                          Text('$pct%', style: TextStyle(fontWeight: FontWeight.w700, color: theme.primaryColor, fontSize: 13)),
                                                       ],
                                                     ),
                                                     const SizedBox(height: 6),
@@ -357,7 +432,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
                                                       height: 6,
                                                       width: double.infinity,
                                                       decoration: BoxDecoration(
-                                                        color: const Color(0xFFF1F5F9),
+                                                        color: theme.dividerColor,
                                                         borderRadius: BorderRadius.circular(4),
                                                       ),
                                                       child: FractionallySizedBox(
@@ -365,7 +440,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
                                                         widthFactor: g.targetAmount > 0 ? (g.currentAmount / g.targetAmount).clamp(0.0, 1.0) : 0.0,
                                                         child: Container(
                                                           decoration: BoxDecoration(
-                                                            color: const Color(0xFF0D9488),
+                                                            color: theme.primaryColor,
                                                             borderRadius: BorderRadius.circular(4),
                                                           ),
                                                         ),
@@ -390,20 +465,22 @@ class _GoalsScreenState extends State<GoalsScreen> {
         ),
 
         // Add modal
-        if (_showAdd) _buildAddModal(),
+        if (_showAdd) _buildAddModal(theme),
       ],
     );
   }
 
-  Widget _buildAddModal() {
+  Widget _buildAddModal(ThemeData theme) {
+    bool isEditing = _editingGoal != null;
+
     return Positioned.fill(
       child: Container(
         color: Colors.black.withValues(alpha: 0.4),
         alignment: Alignment.bottomCenter,
         child: Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.only(topLeft: Radius.circular(32), topRight: Radius.circular(32)),
+          decoration: BoxDecoration(
+            color: theme.cardColor,
+            borderRadius: const BorderRadius.only(topLeft: Radius.circular(24), topRight: Radius.circular(24)),
           ),
           padding: const EdgeInsets.only(left: 20, right: 20, top: 24, bottom: 32),
           child: Column(
@@ -412,17 +489,38 @@ class _GoalsScreenState extends State<GoalsScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Thêm mục tiêu', style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF0F172A), fontSize: 16)),
-                  GestureDetector(
-                    onTap: () => setState(() => _showAdd = false),
-                    child: const Icon(Icons.close, color: Color(0xFF64748B), size: 20),
+                  Text(isEditing ? 'Sửa mục tiêu' : 'Thêm mục tiêu', style: TextStyle(fontWeight: FontWeight.w700, color: theme.primaryColor, fontSize: 16)),
+                  Row(
+                    children: [
+                      if (isEditing)
+                        GestureDetector(
+                          onTap: () => _deleteGoal(_editingGoal!),
+                          child: const Icon(Icons.delete_outline, color: Colors.red, size: 22),
+                        ),
+                      if (isEditing) const SizedBox(width: 16),
+                      GestureDetector(
+                        onTap: () => setState(() => _showAdd = false),
+                        child: Icon(Icons.close, color: theme.textTheme.bodySmall?.color, size: 22),
+                      ),
+                    ],
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
-              _buildTextField('Tên mục tiêu (VD: Mua xe)', _titleController),
-              _buildTextField('Số tiền mục tiêu (VND)', _targetController, isNumber: true),
-              _buildTextField('Đã tiết kiệm được (VND)', _currentController, isNumber: true),
+              const SizedBox(height: 24),
+              _buildTextField('Tên mục tiêu (VD: Mua xe)', _titleController, theme),
+              _buildTextField('Số tiền mục tiêu (VND)', _targetController, theme, isNumber: true),
+              _buildTextField('Đã tiết kiệm được (VND)', _currentController, theme, isNumber: true),
+              if (isEditing) ...[
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  title: Text('Đã hoàn thành', style: TextStyle(color: theme.textTheme.bodyLarge?.color, fontSize: 14, fontWeight: FontWeight.w600)),
+                  value: _isCompleted,
+                  activeColor: theme.primaryColor,
+                  onChanged: (val) => setState(() => _isCompleted = val),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ],
+              const SizedBox(height: 12),
               ElevatedButton(
                 onPressed: () async {
                   final title = _titleController.text.trim();
@@ -432,16 +530,30 @@ class _GoalsScreenState extends State<GoalsScreen> {
 
                   setState(() => _showAdd = false);
                   try {
-                    final newGoal = Goal(
-                      id: 0,
-                      userId: 1,
-                      title: title,
-                      targetAmount: target,
-                      currentAmount: current,
-                      deadline: null,
-                      isCompleted: false,
-                    );
-                    await _apiService.addGoal(newGoal);
+                    if (isEditing) {
+                      final updatedGoal = Goal(
+                        id: _editingGoal!.id,
+                        userId: ApiService.currentUserId,
+                        title: title,
+                        targetAmount: target,
+                        currentAmount: current,
+                        deadline: _editingGoal!.deadline,
+                        isCompleted: _isCompleted,
+                      );
+                      await _apiService.updateGoal(updatedGoal);
+                    } else {
+                      final newGoal = Goal(
+                        id: 0,
+                        userId: ApiService.currentUserId,
+                        title: title,
+                        targetAmount: target,
+                        currentAmount: current,
+                        deadline: null,
+                        isCompleted: _isCompleted,
+                      );
+                      await _apiService.addGoal(newGoal);
+                    }
+                    
                     _titleController.clear();
                     _targetController.clear();
                     _currentController.clear();
@@ -453,13 +565,13 @@ class _GoalsScreenState extends State<GoalsScreen> {
                   }
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0D9488),
-                  foregroundColor: Colors.white,
+                  backgroundColor: theme.primaryColor,
+                  foregroundColor: theme.scaffoldBackgroundColor,
                   elevation: 0,
                   minimumSize: const Size(double.infinity, 56),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 ),
-                child: const Text('Tạo mục tiêu', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                child: Text(isEditing ? 'Lưu thay đổi' : 'Tạo mục tiêu', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
               ),
             ],
           ),
@@ -468,19 +580,21 @@ class _GoalsScreenState extends State<GoalsScreen> {
     );
   }
 
-  Widget _buildTextField(String hint, TextEditingController controller, {bool isNumber = false}) {
+  Widget _buildTextField(String hint, TextEditingController controller, ThemeData theme, {bool isNumber = false}) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 16),
       child: TextField(
         controller: controller,
         keyboardType: isNumber ? TextInputType.number : TextInputType.text,
+        style: TextStyle(color: theme.textTheme.bodyLarge?.color, fontSize: 14),
         decoration: InputDecoration(
           hintText: hint,
+          hintStyle: TextStyle(color: theme.textTheme.bodySmall?.color, fontSize: 14),
           filled: true,
-          fillColor: const Color(0xFFF8FAFC),
+          fillColor: theme.colorScheme.surface,
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: Color(0xFFE2E8F0), width: 1.5)),
-          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: Color(0xFF0D9488), width: 1.5)),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: theme.dividerColor, width: 1.5)),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: theme.primaryColor, width: 1.5)),
         ),
       ),
     );

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import '../models/models.dart';
 
@@ -12,18 +14,22 @@ class Journal extends StatefulWidget {
 class _JournalState extends State<Journal> {
   String _tab = 'all';
   String _search = '';
-  bool _showAI = false;
   bool _showAdd = false;
   String _addType = 'expense';
+  Transaction? _editingTx;
   
   final TextEditingController _searchController = TextEditingController();
-  final TextEditingController _chatController = TextEditingController();
   final TextEditingController _addNoteController = TextEditingController();
   final TextEditingController _addAmountController = TextEditingController();
+  final TextEditingController _customCategoryController = TextEditingController();
   String _addCategory = 'Ăn uống';
+
   final ApiService _apiService = ApiService();
   bool _isLoading = true;
   List<Transaction> _transactions = [];
+  List<MonthlyPlan> _plans = [];
+  List<Goal> _goals = [];
+  int? _addGoalId;
 
   double _totalIncome = 0;
   double _totalExpense = 0;
@@ -37,19 +43,38 @@ class _JournalState extends State<Journal> {
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     try {
-      final txs = await _apiService.getTransactions(1);
+      final results = await Future.wait([
+        _apiService.getTransactions(ApiService.currentUserId),
+        _apiService.getPlans(ApiService.currentUserId),
+        _apiService.getGoals(ApiService.currentUserId),
+      ]);
+      
+      final txs = results[0] as List<Transaction>;
+      final plans = results[1] as List<MonthlyPlan>;
+      final goals = results[2] as List<Goal>;
+      
       double inc = 0;
       double exp = 0;
+      final now = DateTime.now();
+      
       for (var t in txs) {
-        if (t.type.toLowerCase() == 'income') {
-          inc += t.amount;
-        } else {
-          exp += t.amount;
+        if (t.transactionDate.month == now.month && t.transactionDate.year == now.year) {
+          if (t.type.toLowerCase() == 'income') {
+            inc += t.amount;
+          } else {
+            exp += t.amount;
+          }
         }
       }
+      
+      // Sort by date descending
+      txs.sort((a, b) => b.transactionDate.compareTo(a.transactionDate));
+      
       if (mounted) {
         setState(() {
           _transactions = txs;
+          _plans = plans;
+          _goals = goals;
           _totalIncome = inc;
           _totalExpense = exp;
         });
@@ -63,66 +88,206 @@ class _JournalState extends State<Journal> {
     }
   }
 
-  final List<Map<String, dynamic>> _aiMessages = [
-    {'role': 'assistant', 'text': 'Xin chào! 👋 Tôi có thể phân tích chi tiêu và tư vấn kế hoạch tài chính cho bạn.'},
-  ];
-
-  bool _thinking = false;
-
   String _fmt(double n) {
-    if (n >= 1e9) return '${(n / 1e9).toStringAsFixed(1)}T';
-    if (n >= 1e6) return '${(n / 1e6).toStringAsFixed(1)}M';
-    if (n >= 1e3) return '${(n / 1e3).toStringAsFixed(0)}K';
-    return n.toStringAsFixed(0);
+    bool showDetailed = Provider.of<ThemeProvider>(context).showDetailedAmount;
+    if (!showDetailed) {
+      if (n >= 1e9) return '${(n / 1e9).toStringAsFixed(1)}T';
+      if (n >= 1e6) return '${(n / 1e6).toStringAsFixed(1)}M';
+      if (n >= 1e3) return '${(n / 1e3).toStringAsFixed(0)}K';
+    }
+    return '${n.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]}.')} ₫';
   }
 
-  void _handleSend() async {
-    String text = _chatController.text.trim();
-    if (text.isEmpty) return;
-    
+  void _openAddModal([Transaction? t]) {
     setState(() {
-      _aiMessages.add({'role': 'user', 'text': text});
-      _chatController.clear();
-      _thinking = true;
+      _editingTx = t;
+      if (t != null) {
+        _addType = t.type.toLowerCase() == 'income' ? 'income' : 'expense';
+        _addNoteController.text = t.note ?? '';
+        _addAmountController.text = t.amount.toStringAsFixed(0);
+        _addCategory = t.category;
+        _addGoalId = t.goalId;
+      } else {
+        _addType = 'expense';
+        _addNoteController.clear();
+        _addAmountController.clear();
+        _addCategory = 'Ăn uống';
+        _addGoalId = null;
+      }
+      _showAdd = true;
+      if (_addCategory == 'Khác') {
+        _customCategoryController.text = '';
+      }
     });
+  }
+
+  Future<void> _deleteTx(Transaction t) async {
+    bool? confirm = await showDialog(
+      context: context,
+      builder: (c) => AlertDialog(
+        backgroundColor: Theme.of(context).cardColor,
+        title: Text('Xác nhận xóa', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color)),
+        content: Text('Bạn có chắc chắn muốn xóa giao dịch này?', style: TextStyle(color: Theme.of(context).textTheme.bodyMedium?.color)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: Text('Hủy', style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color))),
+          TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('Xóa', style: TextStyle(color: Colors.red))),
+        ],
+      )
+    );
+    if (confirm == true) {
+      try {
+        await _apiService.deleteTransaction(t.id);
+        if (mounted) setState(() => _showAdd = false);
+        _loadData();
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi xóa: $e')));
+      }
+    }
+  }
+
+  Future<void> _saveTransaction() async {
+    final amt = double.tryParse(_addAmountController.text) ?? 0;
+    if (amt <= 0) return;
+
+    setState(() => _showAdd = false);
+
+    String finalCategory = _addCategory;
+    if (_addCategory == 'Khác') {
+      if (_customCategoryController.text.trim().isNotEmpty) {
+        finalCategory = _customCategoryController.text.trim();
+      }
+    }
 
     try {
-      final advice = await _apiService.consultAI(1, text);
-      if (!mounted) return;
-      setState(() {
-        _aiMessages.add({'role': 'assistant', 'text': advice.aiResponse});
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _aiMessages.add({'role': 'assistant', 'text': 'Lỗi kết nối AI: $e'});
-      });
-    } finally {
-      if (mounted) {
-        setState(() => _thinking = false);
+      final now = DateTime.now();
+      
+      if (_editingTx != null) {
+        // Edit existing
+        final updatedTx = Transaction(
+          id: _editingTx!.id,
+          userId: ApiService.currentUserId,
+          amount: amt,
+          type: _addType == 'income' ? 'Income' : 'Expense',
+          category: finalCategory,
+          note: _addNoteController.text,
+          transactionDate: _editingTx!.transactionDate,
+          goalId: _addGoalId,
+        );
+        await _apiService.updateTransaction(updatedTx);
+      } else {
+        // Check for aggregation
+        Transaction? existingTx;
+        for (var t in _transactions) {
+          if (t.type.toLowerCase() == _addType && 
+              t.category == finalCategory && 
+              t.transactionDate.year == now.year &&
+              t.transactionDate.month == now.month &&
+              t.transactionDate.day == now.day) {
+            existingTx = t;
+            break;
+          }
+        }
+
+        if (existingTx != null) {
+          // Aggregate
+          final updatedTx = Transaction(
+            id: existingTx.id,
+            userId: ApiService.currentUserId,
+            amount: existingTx.amount + amt,
+            type: existingTx.type,
+            category: existingTx.category,
+            note: existingTx.note,
+            transactionDate: existingTx.transactionDate,
+            goalId: _addGoalId ?? existingTx.goalId,
+          );
+          await _apiService.updateTransaction(updatedTx);
+        } else {
+          // Add new
+          final newTx = Transaction(
+            id: 0,
+            userId: ApiService.currentUserId,
+            amount: amt,
+            type: _addType == 'income' ? 'Income' : 'Expense',
+            category: finalCategory,
+            note: _addNoteController.text,
+            transactionDate: now,
+            goalId: _addGoalId,
+          );
+          await _apiService.addTransaction(newTx);
+        }
       }
+
+      // Budget checking if expense
+      if (_addType == 'expense' && mounted) {
+        final plan = _plans.where((p) => p.category == _addCategory && p.month == now.month && p.year == now.year).firstOrNull;
+        if (plan != null && plan.plannedAmount > 0) {
+          double spentSoFar = 0;
+          for (var t in _transactions) {
+            if (t.type.toLowerCase() == 'expense' && t.category == _addCategory && 
+                t.transactionDate.month == now.month && t.transactionDate.year == now.year &&
+                (_editingTx == null || t.id != _editingTx!.id)) {
+              spentSoFar += t.amount;
+            }
+          }
+          spentSoFar += amt; // Add current operation's amount
+          
+          if (spentSoFar >= plan.plannedAmount) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: const Text('🚨 Bạn đã vượt quá ngân sách kế hoạch cho danh mục này!', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              backgroundColor: Colors.red.shade800,
+              behavior: SnackBarBehavior.floating,
+            ));
+          } else if (spentSoFar >= plan.plannedAmount * 0.9) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: const Text('⚠️ Cảnh báo: Bạn sắp tiêu hết ngân sách danh mục này!', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              backgroundColor: Colors.orange.shade800,
+              behavior: SnackBarBehavior.floating,
+            ));
+          }
+        }
+      }
+
+      _loadData();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final filtered = _transactions.where((t) {
+    final theme = Theme.of(context);
+    
+    // Filter
+    List<Transaction> filtered = _transactions.where((t) {
       if (_tab == 'income' && t.type.toLowerCase() != 'income') return false;
       if (_tab == 'expense' && t.type.toLowerCase() != 'expense') return false;
-      if (_search.isNotEmpty && !(t.note ?? '').toLowerCase().contains(_search.toLowerCase())) return false;
+      if (_search.isNotEmpty) {
+        if (!t.note!.toLowerCase().contains(_search.toLowerCase()) &&
+            !t.category.toLowerCase().contains(_search.toLowerCase())) {
+          return false;
+        }
+      }
       return true;
     }).toList();
+
+    // Group by Date
+    Map<String, List<Transaction>> grouped = {};
+    for (var t in filtered) {
+      String d = '${t.transactionDate.day.toString().padLeft(2, '0')}/${t.transactionDate.month.toString().padLeft(2, '0')}/${t.transactionDate.year}';
+      if (!grouped.containsKey(d)) grouped[d] = [];
+      grouped[d]!.add(t);
+    }
 
     return Stack(
       children: [
         Container(
-          color: const Color(0xFFF0F4F8),
+          color: theme.scaffoldBackgroundColor,
           child: Column(
             children: [
               // Header
               Container(
                 padding: const EdgeInsets.only(left: 20, right: 20, top: 16, bottom: 20),
-                color: const Color(0xFF0F172A),
+                color: theme.primaryColor,
                 child: Column(
                   children: [
                     Row(
@@ -130,420 +295,242 @@ class _JournalState extends State<Journal> {
                       children: [
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
-                          children: const [
-                            Text('Nhật ký Thu / Chi', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
-                            SizedBox(height: 2),
-                            Text('Tháng 6, 2026', style: TextStyle(color: Color(0xFF64748B), fontSize: 12)),
+                          children: [
+                            Text('Nhật ký giao dịch', style: TextStyle(color: theme.scaffoldBackgroundColor, fontSize: 18, fontWeight: FontWeight.w800)),
+                            const SizedBox(height: 2),
+                            Text('Quản lý dòng tiền', style: TextStyle(color: theme.scaffoldBackgroundColor.withValues(alpha: 0.5), fontSize: 12)),
                           ],
                         ),
-                        Row(
-                          children: [
-                            GestureDetector(
-                              onTap: () => setState(() => _showAI = true),
-                              child: Container(
-                                width: 36,
-                                height: 36,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF0D9488).withValues(alpha: 0.25),
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                alignment: Alignment.center,
-                                child: const Icon(Icons.auto_awesome, color: Color(0xFF2DD4BF), size: 17),
-                              ),
+                        GestureDetector(
+                          onTap: () => _openAddModal(),
+                          child: Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              color: theme.scaffoldBackgroundColor,
+                              borderRadius: BorderRadius.circular(12),
                             ),
-                            const SizedBox(width: 8),
-                            GestureDetector(
-                              onTap: () => setState(() => _showAdd = true),
-                              child: Container(
-                                width: 36,
-                                height: 36,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF0D9488),
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                alignment: Alignment.center,
-                                child: const Icon(Icons.add, color: Colors.white, size: 18),
-                              ),
-                            ),
-                          ],
+                            alignment: Alignment.center,
+                            child: Icon(Icons.add, color: theme.primaryColor, size: 18),
+                          ),
                         ),
                       ],
+                    ),
+                    const SizedBox(height: 24),
+                    
+                    // Search & Tabs
+                    Container(
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: theme.scaffoldBackgroundColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: TextField(
+                        controller: _searchController,
+                        onChanged: (v) => setState(() => _search = v),
+                        style: TextStyle(color: theme.scaffoldBackgroundColor, fontSize: 14),
+                        decoration: InputDecoration(
+                          hintText: 'Tìm kiếm giao dịch...',
+                          hintStyle: TextStyle(color: theme.scaffoldBackgroundColor.withValues(alpha: 0.5), fontSize: 14),
+                          prefixIcon: Icon(Icons.search, color: theme.scaffoldBackgroundColor.withValues(alpha: 0.5), size: 18),
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
                     ),
                     const SizedBox(height: 16),
                     Row(
                       children: [
-                        _buildSummaryPill('Thu', _fmt(_totalIncome), const Color(0xFF10B981), const Color(0xFF10B981).withValues(alpha: 0.15)),
+                        _buildTab('Tất cả', 'all', theme),
                         const SizedBox(width: 8),
-                        _buildSummaryPill('Chi', _fmt(_totalExpense), const Color(0xFFF43F5E), const Color(0xFFF43F5E).withValues(alpha: 0.15)),
+                        _buildTab('Tiền vào', 'income', theme),
                         const SizedBox(width: 8),
-                        _buildSummaryPill('Còn', _fmt(_totalIncome - _totalExpense), const Color(0xFF2DD4BF), const Color(0xFF0D9488).withValues(alpha: 0.15)),
+                        _buildTab('Tiền ra', 'expense', theme),
                       ],
                     ),
                   ],
                 ),
               ),
 
-              // Tabs + Search
+              // Summary
               Container(
-                color: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                child: Column(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                color: theme.cardColor,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF1F5F9),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Row(
-                        children: [
-                          _buildTabButton('all', 'Tất cả'),
-                          _buildTabButton('income', 'Thu nhập'),
-                          _buildTabButton('expense', 'Chi tiêu'),
-                        ],
-                      ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Tổng thu tháng này', style: TextStyle(fontSize: 11, color: theme.textTheme.bodySmall?.color)),
+                        const SizedBox(height: 2),
+                        Text('+${_fmt(_totalIncome)} ₫', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: theme.primaryColor)),
+                      ],
                     ),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.search, color: Color(0xFF94A3B8), size: 16),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: TextField(
-                              controller: _searchController,
-                              onChanged: (v) => setState(() => _search = v),
-                              decoration: const InputDecoration(
-                                hintText: 'Tìm giao dịch...',
-                                hintStyle: TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
-                                border: InputBorder.none,
-                                isDense: true,
-                                contentPadding: EdgeInsets.symmetric(vertical: 12),
-                              ),
-                              style: const TextStyle(color: Color(0xFF0F172A), fontSize: 13),
-                            ),
-                          ),
-                        ],
-                      ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text('Tổng chi tháng này', style: TextStyle(fontSize: 11, color: theme.textTheme.bodySmall?.color)),
+                        const SizedBox(height: 2),
+                        Text('-${_fmt(_totalExpense)} ₫', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: theme.primaryColor)),
+                      ],
                     ),
                   ],
                 ),
               ),
+              Divider(height: 1, color: theme.dividerColor),
 
               // List
               Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(24),
-                    ),
-                    child: _isLoading 
-                        ? const Center(child: CircularProgressIndicator(color: Color(0xFF0D9488)))
-                        : ListView.separated(
-                      itemCount: filtered.length,
-                      separatorBuilder: (context, index) => const Divider(height: 1, color: Color(0xFFF8FAFC)),
-                      itemBuilder: (context, index) {
-                        final t = filtered[index];
-                        bool isIncome = t.type.toLowerCase() == 'income';
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 40,
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: isIncome ? const Color(0xFFD1FAE5) : const Color(0xFFFEF2F2),
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                alignment: Alignment.center,
-                                child: Text(isIncome ? '💰' : '💸', style: const TextStyle(fontSize: 18)),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(t.note ?? 'Giao dịch', style: const TextStyle(fontSize: 14, color: Color(0xFF0F172A), fontWeight: FontWeight.w600)),
-                                    const SizedBox(height: 2),
-                                    Text('${t.category} · ${t.transactionDate.day}/${t.transactionDate.month}', style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
-                                  ],
-                                ),
-                              ),
-                              Text(
-                                '${isIncome ? "+" : "-"}${_fmt(t.amount)}',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w700,
-                                  color: isIncome ? const Color(0xFF10B981) : const Color(0xFFF43F5E),
-                                  fontFamily: 'DM Mono',
-                                ),
-                              ),
-                            ],
+                child: _isLoading
+                    ? Center(child: CircularProgressIndicator(color: theme.primaryColor))
+                    : grouped.isEmpty
+                        ? Center(child: Text('Không có giao dịch nào', style: TextStyle(color: theme.textTheme.bodySmall?.color)))
+                        : ListView.builder(
+                            padding: const EdgeInsets.all(20),
+                            itemCount: grouped.length,
+                            itemBuilder: (context, index) {
+                              String date = grouped.keys.elementAt(index);
+                              List<Transaction> dayTxs = grouped[date]!;
+                              return _buildDayGroup(date, dayTxs, theme);
+                            },
                           ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
               ),
             ],
           ),
         ),
-        
-        // AI Drawer
-        if (_showAI) _buildAIDrawer(),
-        
+
         // Add Modal
-        if (_showAdd) _buildAddModal(),
+        if (_showAdd) _buildAddModal(theme),
       ],
     );
   }
 
-  Widget _buildSummaryPill(String label, String val, Color color, Color bg) {
-    return Expanded(
+  Widget _buildTab(String label, String val, ThemeData theme) {
+    bool active = _tab == val;
+    return GestureDetector(
+      onTap: () => setState(() => _tab = val),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(16),
+          color: active ? theme.scaffoldBackgroundColor : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: active ? Colors.transparent : theme.scaffoldBackgroundColor.withValues(alpha: 0.2)),
         ),
-        child: Column(
-          children: [
-            Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10)),
-            Text(val, style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 14, fontFamily: 'DM Mono')),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTabButton(String tabId, String label) {
-    bool active = _tab == tabId;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() => _tab = tabId),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(
-            color: active ? Colors.white : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: active ? [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 4, offset: const Offset(0, 1))] : null,
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            style: TextStyle(
-              color: active ? const Color(0xFF0F172A) : const Color(0xFF94A3B8),
-              fontWeight: active ? FontWeight.w700 : FontWeight.w400,
-              fontSize: 12,
-            ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: active ? theme.primaryColor : theme.scaffoldBackgroundColor.withValues(alpha: 0.6),
+            fontSize: 12,
+            fontWeight: active ? FontWeight.w600 : FontWeight.w500,
           ),
         ),
       ),
     );
   }
 
-  Widget _buildAIDrawer() {
-    return Positioned.fill(
-      child: Container(
-        color: Colors.white,
-        child: Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.only(left: 20, right: 20, top: 20, bottom: 16),
-              decoration: const BoxDecoration(
-                border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
+  Widget _buildDayGroup(String date, List<Transaction> txs, ThemeData theme) {
+    double totalDayInc = 0;
+    double totalDayExp = 0;
+    for (var t in txs) {
+      if (t.type.toLowerCase() == 'income') totalDayInc += t.amount;
+      else totalDayExp += t.amount;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(date, style: TextStyle(fontWeight: FontWeight.w700, color: theme.textTheme.bodySmall?.color, fontSize: 13)),
+              Text(
+                (totalDayInc > 0 ? '+${_fmt(totalDayInc)}  ' : '') + (totalDayExp > 0 ? '-${_fmt(totalDayExp)}' : ''),
+                style: TextStyle(fontWeight: FontWeight.w600, color: theme.textTheme.bodySmall?.color, fontSize: 12),
               ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 36,
-                    height: 36,
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            decoration: BoxDecoration(
+              color: theme.cardColor,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: theme.dividerColor),
+            ),
+            child: Column(
+              children: txs.asMap().entries.map((e) {
+                int i = e.key;
+                Transaction t = e.value;
+                bool isIncome = t.type.toLowerCase() == 'income';
+                return InkWell(
+                  onTap: () => _openAddModal(t),
+                  borderRadius: BorderRadius.circular(16),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(colors: [Color(0xFF0D9488), Color(0xFF3B82F6)], begin: Alignment.topLeft, end: Alignment.bottomRight),
-                      borderRadius: BorderRadius.circular(16),
+                      border: i > 0 ? Border(top: BorderSide(color: theme.colorScheme.surface)) : null,
                     ),
-                    alignment: Alignment.center,
-                    child: const Icon(Icons.smart_toy, color: Colors.white, size: 17),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: const [
-                        Text('Trợ lý AI Tài chính', style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF0F172A), fontSize: 14)),
-                        Text('● Đang hoạt động', style: TextStyle(color: Color(0xFF10B981), fontSize: 11)),
-                      ],
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: () => setState(() => _showAI = false),
-                    child: const Icon(Icons.close, color: Color(0xFF64748B), size: 20),
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: _aiMessages.length + (_thinking ? 1 : 0),
-                itemBuilder: (context, index) {
-                  if (index == _aiMessages.length && _thinking) {
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12, left: 36),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF8FAFC),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: const Text('...', style: TextStyle(color: Color(0xFF374151), fontSize: 14, letterSpacing: 2)),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-                  final m = _aiMessages[index];
-                  bool isUser = m['role'] == 'user';
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
                     child: Row(
-                      mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (!isUser) ...[
-                          Container(
-                            width: 28,
-                            height: 28,
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(colors: [Color(0xFF0D9488), Color(0xFF3B82F6)], begin: Alignment.topLeft, end: Alignment.bottomRight),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            alignment: Alignment.center,
-                            child: const Icon(Icons.smart_toy, color: Colors.white, size: 13),
-                          ),
-                          const SizedBox(width: 8),
-                        ],
-                        Flexible(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                            decoration: BoxDecoration(
-                              color: isUser ? const Color(0xFF0D9488) : const Color(0xFFF8FAFC),
-                              borderRadius: BorderRadius.only(
-                                topLeft: const Radius.circular(16),
-                                topRight: const Radius.circular(16),
-                                bottomLeft: Radius.circular(isUser ? 16 : 4),
-                                bottomRight: Radius.circular(isUser ? 4 : 16),
-                              ),
-                            ),
-                            child: Text(
-                              m['text'] as String,
-                              style: TextStyle(color: isUser ? Colors.white : const Color(0xFF374151), fontSize: 14, height: 1.4),
-                            ),
-                          ),
-                        ),
-                        if (isUser) const SizedBox(width: 36),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: const BoxDecoration(border: Border(top: BorderSide(color: Color(0xFFF1F5F9)))),
-              child: Column(
-                children: [
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: ['Phân tích tháng này', 'Tiết kiệm hơn', 'Chi nhiều nhất'].map((s) => Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: GestureDetector(
-                          onTap: () {
-                            _chatController.text = s;
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF0FDFA),
-                              border: Border.all(color: const Color(0xFFCCFBF1)),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(s, style: const TextStyle(color: Color(0xFF0D9488), fontSize: 12)),
-                          ),
-                        ),
-                      )).toList(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _chatController,
-                          onSubmitted: (_) => _handleSend(),
-                          decoration: InputDecoration(
-                            hintText: 'Nhập câu hỏi...',
-                            filled: true,
-                            fillColor: const Color(0xFFF8FAFC),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      GestureDetector(
-                        onTap: _handleSend,
-                        child: Container(
-                          width: 44,
-                          height: 44,
+                        Container(
+                          width: 40,
+                          height: 40,
                           decoration: BoxDecoration(
-                            color: const Color(0xFF0D9488),
-                            borderRadius: BorderRadius.circular(16),
+                            color: theme.colorScheme.surface,
+                            shape: BoxShape.circle,
                           ),
                           alignment: Alignment.center,
-                          child: const Icon(Icons.send, color: Colors.white, size: 16),
+                          child: Icon(
+                            isIncome ? Icons.arrow_upward : Icons.arrow_downward,
+                            color: isIncome ? Colors.green : Colors.red,
+                            size: 16,
+                          ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(t.category, style: TextStyle(fontWeight: FontWeight.w600, color: theme.textTheme.bodyLarge?.color, fontSize: 14)),
+                              if (t.note?.isNotEmpty == true) ...[
+                                const SizedBox(height: 2),
+                                Text(t.note!, style: TextStyle(color: theme.textTheme.bodySmall?.color, fontSize: 12)),
+                              ],
+                            ],
+                          ),
+                        ),
+                        Text(
+                          '${isIncome ? "+" : "-"}${_fmt(t.amount)} ₫',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: isIncome ? Colors.green : Colors.red,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ],
-              ),
+                );
+              }).toList(),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildAddModal() {
+  Widget _buildAddModal(ThemeData theme) {
+    bool isEditing = _editingTx != null;
     return Positioned.fill(
       child: Container(
         color: Colors.black.withValues(alpha: 0.4),
         alignment: Alignment.bottomCenter,
         child: Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.only(topLeft: Radius.circular(32), topRight: Radius.circular(32)),
+          decoration: BoxDecoration(
+            color: theme.cardColor,
+            borderRadius: const BorderRadius.only(topLeft: Radius.circular(24), topRight: Radius.circular(24)),
           ),
           padding: const EdgeInsets.only(left: 20, right: 20, top: 24, bottom: 32),
           child: Column(
@@ -552,141 +539,199 @@ class _JournalState extends State<Journal> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Thêm giao dịch', style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF0F172A), fontSize: 16)),
-                  GestureDetector(
-                    onTap: () => setState(() => _showAdd = false),
-                    child: const Icon(Icons.close, color: Color(0xFF64748B), size: 20),
+                  Text(isEditing ? 'Sửa giao dịch' : 'Thêm giao dịch mới', style: TextStyle(fontWeight: FontWeight.w700, color: theme.primaryColor, fontSize: 16)),
+                  Row(
+                    children: [
+                      if (isEditing)
+                        GestureDetector(
+                          onTap: () => _deleteTx(_editingTx!),
+                          child: const Icon(Icons.delete_outline, color: Colors.red, size: 22),
+                        ),
+                      if (isEditing) const SizedBox(width: 16),
+                      GestureDetector(
+                        onTap: () => setState(() => _showAdd = false),
+                        child: Icon(Icons.close, color: theme.textTheme.bodySmall?.color, size: 22),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => setState(() => _addType = 'expense'),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          color: _addType == 'expense' ? theme.primaryColor : theme.colorScheme.surface,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: _addType == 'expense' ? Colors.transparent : theme.dividerColor),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text('Tiền ra', style: TextStyle(color: _addType == 'expense' ? theme.scaffoldBackgroundColor : theme.textTheme.bodySmall?.color, fontWeight: FontWeight.w600, fontSize: 13)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => setState(() => _addType = 'income'),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          color: _addType == 'income' ? theme.primaryColor : theme.colorScheme.surface,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: _addType == 'income' ? Colors.transparent : theme.dividerColor),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text('Tiền vào', style: TextStyle(color: _addType == 'income' ? theme.scaffoldBackgroundColor : theme.textTheme.bodySmall?.color, fontWeight: FontWeight.w600, fontSize: 13)),
+                      ),
+                    ),
                   ),
                 ],
               ),
               const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Row(
-                  children: [
-                    _buildAddTypeButton('expense', 'Chi tiêu', const Color(0xFFF43F5E)),
-                    _buildAddTypeButton('income', 'Thu nhập', const Color(0xFF10B981)),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              _buildAddTextField('Mô tả giao dịch', _addNoteController),
-              const SizedBox(height: 12),
-              _buildAddTextField('Số tiền (VND)', _addAmountController, isNumber: true),
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
-                  border: Border.all(color: const Color(0xFFE2E8F0), width: 1.5),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    isExpanded: true,
-                    value: _addCategory,
-                    items: (_addType == 'income' 
-                            ? ['Thu nhập', 'Thưởng', 'Khác'] 
-                            : ['Ăn uống', 'Di chuyển', 'Giải trí', 'Mua sắm', 'Hóa đơn', 'Sức khỏe', 'Khác'])
-                        .map((c) => DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(fontSize: 14)))).toList(),
-                    onChanged: (v) {
-                      if (v != null) setState(() => _addCategory = v);
-                    },
-                  ),
+              TextField(
+                controller: _addAmountController,
+                keyboardType: TextInputType.number,
+                style: TextStyle(color: theme.textTheme.bodyLarge?.color, fontSize: 24, fontWeight: FontWeight.w700),
+                decoration: InputDecoration(
+                  hintText: '0 ₫',
+                  hintStyle: TextStyle(color: theme.textTheme.bodySmall?.color?.withValues(alpha: 0.5), fontSize: 24, fontWeight: FontWeight.w700),
+                  filled: true,
+                  fillColor: theme.colorScheme.surface,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: theme.dividerColor, width: 1.5)),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: theme.primaryColor, width: 1.5)),
                 ),
               ),
               const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () async {
-                  final amt = double.tryParse(_addAmountController.text) ?? 0;
-                  if (amt <= 0) return;
-                  final newTx = Transaction(
-                    id: 0,
-                    userId: 1,
-                    amount: amt,
-                    category: _addCategory,
-                    type: _addType,
-                    transactionDate: DateTime.now(),
-                    note: _addNoteController.text,
-                  );
-                  setState(() => _showAdd = false);
-                  try {
-                    await _apiService.addTransaction(newTx);
-                    _addNoteController.clear();
-                    _addAmountController.clear();
-                    _loadData();
-                  } catch (e) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+              
+              DropdownButtonFormField<String>(
+                value: _addCategory,
+                dropdownColor: theme.cardColor,
+                style: TextStyle(color: theme.textTheme.bodyLarge?.color, fontSize: 14),
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: theme.colorScheme.surface,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: theme.dividerColor, width: 1.5)),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: theme.primaryColor, width: 1.5)),
+                ),
+                items: (() {
+                  List<String> list = _addType == 'expense' 
+                    ? ['Ăn uống', 'Di chuyển', 'Mua sắm', 'Hóa đơn', 'Giải trí', 'Sức khỏe']
+                    : ['Lương', 'Thưởng', 'Đầu tư', 'Quà tặng'];
+                  Set<String> customCats = {};
+                  for (var t in _transactions) {
+                    if (t.type.toLowerCase() == _addType) {
+                      customCats.add(t.category);
+                    }
                   }
+                  if (_addType == 'expense') {
+                    for (var p in _plans) {
+                      customCats.add(p.category);
+                    }
+                  }
+                  for (var cat in customCats) {
+                    if (!list.contains(cat) && cat != 'Khác') {
+                      list.add(cat);
+                    }
+                  }
+                  list.add('Khác');
+                  if (!list.contains(_addCategory)) list = [...list, _addCategory];
+                  return list;
+                }()).map((String val) {
+                  return DropdownMenuItem<String>(
+                    value: val,
+                    child: Text(val, style: TextStyle(color: theme.textTheme.bodyLarge?.color)),
+                  );
+                }).toList(),
+                onChanged: (val) {
+                  if (val != null) setState(() => _addCategory = val);
                 },
+              ),
+              if (_addCategory == 'Khác') ...[
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _customCategoryController,
+                  style: TextStyle(color: theme.textTheme.bodyLarge?.color, fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: 'Nhập tên danh mục...',
+                    hintStyle: TextStyle(color: theme.textTheme.bodySmall?.color, fontSize: 14),
+                    filled: true,
+                    fillColor: theme.colorScheme.surface,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: theme.dividerColor, width: 1.5)),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: theme.primaryColor, width: 1.5)),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              
+              if (_goals.isNotEmpty) ...[
+                DropdownButtonFormField<int?>(
+                  value: _addGoalId,
+                  dropdownColor: theme.cardColor,
+                  style: TextStyle(color: theme.textTheme.bodyLarge?.color, fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: 'Gắn với mục tiêu (tùy chọn)',
+                    hintStyle: TextStyle(color: theme.textTheme.bodySmall?.color, fontSize: 14),
+                    filled: true,
+                    fillColor: theme.colorScheme.surface,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: theme.dividerColor, width: 1.5)),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: theme.primaryColor, width: 1.5)),
+                  ),
+                  items: [
+                    DropdownMenuItem<int?>(
+                      value: null,
+                      child: Text('Không gắn mục tiêu', style: TextStyle(color: theme.textTheme.bodySmall?.color)),
+                    ),
+                    ..._goals.map((Goal g) {
+                      return DropdownMenuItem<int?>(
+                        value: g.id,
+                        child: Text(g.title, style: TextStyle(color: theme.textTheme.bodyLarge?.color)),
+                      );
+                    }).toList(),
+                  ],
+                  onChanged: (val) {
+                    setState(() => _addGoalId = val);
+                  },
+                ),
+                const SizedBox(height: 16),
+              ],
+              
+              TextField(
+                controller: _addNoteController,
+                style: TextStyle(color: theme.textTheme.bodyLarge?.color, fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: 'Ghi chú (tùy chọn)',
+                  hintStyle: TextStyle(color: theme.textTheme.bodySmall?.color, fontSize: 14),
+                  filled: true,
+                  fillColor: theme.colorScheme.surface,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: theme.dividerColor, width: 1.5)),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: theme.primaryColor, width: 1.5)),
+                ),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: _saveTransaction,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: _addType == 'income' ? const Color(0xFF10B981) : const Color(0xFF0D9488),
-                  foregroundColor: Colors.white,
+                  backgroundColor: theme.primaryColor,
+                  foregroundColor: theme.scaffoldBackgroundColor,
                   elevation: 0,
                   minimumSize: const Size(double.infinity, 56),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 ),
-                child: const Text('Lưu giao dịch', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                child: Text(isEditing ? 'Lưu thay đổi' : 'Thêm giao dịch', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
               ),
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildAddTypeButton(String type, String label, Color activeColor) {
-    bool active = _addType == type;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() {
-          _addType = type;
-          _addCategory = type == 'income' ? 'Thu nhập' : 'Ăn uống';
-        }),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: active ? activeColor : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            style: TextStyle(
-              color: active ? Colors.white : const Color(0xFF64748B),
-              fontWeight: FontWeight.w700,
-              fontSize: 14,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAddTextField(String hint, TextEditingController controller, {bool isNumber = false}) {
-    return TextField(
-      controller: controller,
-      keyboardType: isNumber ? TextInputType.number : TextInputType.text,
-      decoration: InputDecoration(
-        hintText: hint,
-        filled: true,
-        fillColor: const Color(0xFFF8FAFC),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: Color(0xFFE2E8F0), width: 1.5),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: Color(0xFF0D9488), width: 1.5),
-        ),
-      ),
-      style: TextStyle(
-        fontFamily: isNumber ? 'DM Mono' : null,
       ),
     );
   }

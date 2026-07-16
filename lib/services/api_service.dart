@@ -11,6 +11,15 @@ class ApiService {
   static int? _userId;
   
   static final Map<String, dynamic> _apiCache = {};
+  static void Function()? onUnauthorized;
+
+  static void _handle401(http.Response response) {
+    if (response.statusCode == 401) {
+      logout();
+      onUnauthorized?.call();
+      throw Exception('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.');
+    }
+  }
 
   static void clearCache() {
     _apiCache.clear();
@@ -58,6 +67,7 @@ class ApiService {
         'monthlySalary': monthlySalary,
       }),
     );
+    _handle401(response);
     if (response.statusCode == 200) {
       clearCache();
       return true;
@@ -122,6 +132,7 @@ class ApiService {
         'expensesDescription': expensesDescription,
       }),
     );
+    _handle401(response);
     if (response.statusCode != 200) {
       throw Exception('Onboard failed: ${response.body}');
     }
@@ -132,6 +143,7 @@ class ApiService {
     if (_apiCache.containsKey(url)) return _apiCache[url] as User;
 
     final response = await http.get(Uri.parse(url), headers: _headers);
+    _handle401(response);
     if (response.statusCode == 200) {
       var user = User.fromJson(jsonDecode(response.body));
       _apiCache[url] = user;
@@ -152,6 +164,7 @@ class ApiService {
     if (_apiCache.containsKey(url)) return _apiCache[url] as List<Transaction>;
 
     final response = await http.get(Uri.parse(url), headers: _headers);
+    _handle401(response);
     if (response.statusCode == 200) {
       Iterable l = json.decode(response.body);
       var result = List<Transaction>.from(l.map((model) => Transaction.fromJson(model)));
@@ -168,6 +181,7 @@ class ApiService {
       headers: _headers,
       body: jsonEncode(transaction.toJson()),
     );
+    _handle401(response);
     if (response.statusCode == 200 || response.statusCode == 201) {
       clearCache();
       return Transaction.fromJson(json.decode(response.body));
@@ -182,6 +196,7 @@ class ApiService {
       headers: _headers,
       body: jsonEncode(transaction.toJson()),
     );
+    _handle401(response);
     if (response.statusCode == 200 || response.statusCode == 204) {
       clearCache();
       return transaction; // usually API returns updated object or we just return passed object
@@ -195,6 +210,7 @@ class ApiService {
     if (_apiCache.containsKey(url)) return _apiCache[url] as List<Goal>;
 
     final response = await http.get(Uri.parse(url), headers: _headers);
+    _handle401(response);
     if (response.statusCode == 200) {
       Iterable l = json.decode(response.body);
       var result = List<Goal>.from(l.map((model) => Goal.fromJson(model)));
@@ -211,6 +227,7 @@ class ApiService {
       headers: _headers,
       body: jsonEncode(goal.toJson()),
     );
+    _handle401(response);
     if (response.statusCode == 200 || response.statusCode == 201) {
       clearCache();
       return Goal.fromJson(json.decode(response.body));
@@ -225,6 +242,7 @@ class ApiService {
       headers: _headers,
       body: jsonEncode(goal.toJson()),
     );
+    _handle401(response);
     if (response.statusCode == 200 || response.statusCode == 204) {
       clearCache();
       return goal;
@@ -241,6 +259,7 @@ class ApiService {
     if (_apiCache.containsKey(url)) return _apiCache[url] as List<MonthlyPlan>;
 
     final response = await http.get(Uri.parse(url), headers: _headers);
+    _handle401(response);
     if (response.statusCode == 200) {
       Iterable l = json.decode(response.body);
       var result = List<MonthlyPlan>.from(l.map((model) => MonthlyPlan.fromJson(model)));
@@ -257,6 +276,7 @@ class ApiService {
       headers: _headers,
       body: jsonEncode(plan.toJson()),
     );
+    _handle401(response);
     if (response.statusCode == 200 || response.statusCode == 201) {
       clearCache();
       return MonthlyPlan.fromJson(json.decode(response.body));
@@ -271,6 +291,7 @@ class ApiService {
       headers: _headers,
       body: jsonEncode(plan.toJson()),
     );
+    _handle401(response);
     if (response.statusCode == 200 || response.statusCode == 204) {
       clearCache();
       return plan;
@@ -286,6 +307,7 @@ class ApiService {
         headers: _headers,
         body: jsonEncode(query),
       );
+      _handle401(response);
       if (response.statusCode == 200) {
         return AIAdvice.fromJson(json.decode(response.body));
       } else {
@@ -298,6 +320,7 @@ class ApiService {
 
   Future<bool> applyAIAdvice(int adviceId) async {
     final response = await http.post(Uri.parse('$baseUrl/AI/apply/$adviceId'), headers: _headers);
+    _handle401(response);
     if (response.statusCode == 200) {
       clearCache();
       return true;
@@ -307,6 +330,7 @@ class ApiService {
 
   Future<bool> deleteTransaction(int id) async {
     final response = await http.delete(Uri.parse('$baseUrl/Transactions/$id'), headers: _headers);
+    _handle401(response);
     bool ok = response.statusCode == 204 || response.statusCode == 200;
     if (ok) clearCache();
     return ok;
@@ -314,6 +338,7 @@ class ApiService {
 
   Future<bool> deleteGoal(int id) async {
     final response = await http.delete(Uri.parse('$baseUrl/Goals/$id'), headers: _headers);
+    _handle401(response);
     bool ok = response.statusCode == 204 || response.statusCode == 200;
     if (ok) clearCache();
     return ok;
@@ -321,6 +346,7 @@ class ApiService {
 
   Future<bool> deletePlan(int id) async {
     final response = await http.delete(Uri.parse('$baseUrl/MonthlyPlans/$id'), headers: _headers);
+    _handle401(response);
     bool ok = response.statusCode == 204 || response.statusCode == 200;
     if (ok) clearCache();
     return ok;

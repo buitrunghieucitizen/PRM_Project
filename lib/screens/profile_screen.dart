@@ -18,6 +18,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
   User? _user;
   bool _isLoading = true;
 
+  final TextEditingController _nameCtrl = TextEditingController();
+  final TextEditingController _phoneCtrl = TextEditingController();
+  final TextEditingController _jobCtrl = TextEditingController();
+  final TextEditingController _salaryCtrl = TextEditingController();
+
+  final TextEditingController _oldPassCtrl = TextEditingController();
+  final TextEditingController _newPassCtrl = TextEditingController();
+  final TextEditingController _confirmPassCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _phoneCtrl.dispose();
+    _jobCtrl.dispose();
+    _salaryCtrl.dispose();
+    _oldPassCtrl.dispose();
+    _newPassCtrl.dispose();
+    _confirmPassCtrl.dispose();
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -59,10 +80,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   void _showEditProfile() {
     if (_user == null) return;
-    final TextEditingController nameCtrl = TextEditingController(text: _user!.fullName);
-    final TextEditingController phoneCtrl = TextEditingController(text: _user!.phoneNumber);
-    final TextEditingController jobCtrl = TextEditingController(text: _user!.jobTitle);
-    final TextEditingController salaryCtrl = TextEditingController(text: _user!.monthlySalary?.toStringAsFixed(0) ?? '');
+    _nameCtrl.text = _user!.fullName ?? '';
+    _phoneCtrl.text = _user!.phoneNumber ?? '';
+    _jobCtrl.text = _user!.jobTitle ?? '';
+    _salaryCtrl.text = _user!.monthlySalary?.toStringAsFixed(0) ?? '';
     
     showDialog(
       context: context,
@@ -75,7 +96,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(
-                  controller: nameCtrl,
+                  controller: _nameCtrl,
                   style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
                   decoration: InputDecoration(
                     labelText: 'Họ và tên',
@@ -83,7 +104,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
                 TextField(
-                  controller: phoneCtrl,
+                  controller: _phoneCtrl,
                   style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
                   keyboardType: TextInputType.phone,
                   decoration: InputDecoration(
@@ -92,7 +113,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
                 TextField(
-                  controller: jobCtrl,
+                  controller: _jobCtrl,
                   style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
                   decoration: InputDecoration(
                     labelText: 'Nghề nghiệp',
@@ -100,7 +121,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
                 TextField(
-                  controller: salaryCtrl,
+                  controller: _salaryCtrl,
                   style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
                   keyboardType: TextInputType.number,
                   decoration: InputDecoration(
@@ -118,23 +139,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             ElevatedButton(
               onPressed: () async {
-                final newName = nameCtrl.text.trim();
-                final phone = phoneCtrl.text.trim();
-                final job = jobCtrl.text.trim();
-                final salary = double.tryParse(salaryCtrl.text.trim());
+                final newName = _nameCtrl.text.trim();
+                final phone = _phoneCtrl.text.trim();
+                final job = _jobCtrl.text.trim();
+                final salary = double.tryParse(_salaryCtrl.text.trim());
                 if (newName.isNotEmpty) {
                   bool success = await _apiService.updateUser(ApiService.currentUserId, newName, phone, job, salary);
+                  if (!context.mounted) return;
                   if (success) {
-                    if (mounted) {
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cập nhật thành công!')));
-                      _loadUser(); // refresh
-                    }
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cập nhật thành công!')));
+                    _loadUser(); // refresh
                   } else {
-                    if (mounted) {
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Lỗi cập nhật!')));
-                    }
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Lỗi cập nhật!')));
                   }
                 }
               },
@@ -148,9 +166,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _showChangePassword() {
-    final TextEditingController oldPassCtrl = TextEditingController();
-    final TextEditingController newPassCtrl = TextEditingController();
-    final TextEditingController confirmPassCtrl = TextEditingController();
+    _oldPassCtrl.clear();
+    _newPassCtrl.clear();
+    _confirmPassCtrl.clear();
 
     showDialog(
       context: context,
@@ -163,7 +181,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(
-                  controller: oldPassCtrl,
+                  controller: _oldPassCtrl,
                   obscureText: true,
                   style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
                   decoration: InputDecoration(
@@ -172,7 +190,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
                 TextField(
-                  controller: newPassCtrl,
+                  controller: _newPassCtrl,
                   obscureText: true,
                   style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
                   decoration: InputDecoration(
@@ -181,7 +199,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
                 TextField(
-                  controller: confirmPassCtrl,
+                  controller: _confirmPassCtrl,
                   obscureText: true,
                   style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
                   decoration: InputDecoration(
@@ -199,9 +217,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             ElevatedButton(
               onPressed: () async {
-                final oldPass = oldPassCtrl.text;
-                final newPass = newPassCtrl.text;
-                final confirmPass = confirmPassCtrl.text;
+                final oldPass = _oldPassCtrl.text;
+                final newPass = _newPassCtrl.text;
+                final confirmPass = _confirmPassCtrl.text;
 
                 if (newPass != confirmPass) {
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Mật khẩu mới không khớp!')));
@@ -214,20 +232,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                 try {
                   bool success = await _apiService.changePassword(ApiService.currentUserId, oldPass, newPass);
+                  if (!context.mounted) return;
                   if (success) {
-                    if (mounted) {
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đổi mật khẩu thành công!')));
-                    }
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đổi mật khẩu thành công!')));
                   } else {
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Mật khẩu cũ không đúng hoặc có lỗi!')));
-                    }
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Mật khẩu cũ không đúng hoặc có lỗi!')));
                   }
                 } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
-                  }
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
                 }
               },
               style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).primaryColor, foregroundColor: Theme.of(context).scaffoldBackgroundColor),
@@ -316,7 +330,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           subtitle: Text('Tắt M, K (ví dụ: hiển thị 1.000.000 thay vì 1M)', style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color?.withValues(alpha: 0.6), fontSize: 12)),
                           trailing: Switch(
                             value: themeProvider.showDetailedAmount,
-                            activeColor: Theme.of(context).primaryColor,
+                            activeThumbColor: Theme.of(context).primaryColor,
                             onChanged: (val) {
                               themeProvider.toggleDetailedAmount(val);
                             },

@@ -99,13 +99,13 @@ class Goal {
 
   factory Goal.fromJson(Map<String, dynamic> json) {
     return Goal(
-      id: json['id'],
-      userId: json['userId'],
-      title: json['title'],
-      targetAmount: (json['targetAmount'] as num).toDouble(),
-      currentAmount: (json['currentAmount'] as num).toDouble(),
+      id: json['id'] ?? 0,
+      userId: json['userId'] ?? 1,
+      title: json['title'] ?? '',
+      targetAmount: json['targetAmount'] != null ? (json['targetAmount'] as num).toDouble() : 0.0,
+      currentAmount: json['currentAmount'] != null ? (json['currentAmount'] as num).toDouble() : 0.0,
       deadline: json['deadline'] != null ? DateTime.parse(json['deadline']) : null,
-      isCompleted: json['isCompleted'],
+      isCompleted: json['isCompleted'] ?? false,
     );
   }
 
@@ -141,12 +141,12 @@ class MonthlyPlan {
 
   factory MonthlyPlan.fromJson(Map<String, dynamic> json) {
     return MonthlyPlan(
-      id: json['id'],
-      userId: json['userId'],
-      month: json['month'],
-      year: json['year'],
-      category: json['category'],
-      plannedAmount: (json['plannedAmount'] as num).toDouble(),
+      id: json['id'] ?? 0,
+      userId: json['userId'] ?? 1,
+      month: json['month'] ?? DateTime.now().month,
+      year: json['year'] ?? DateTime.now().year,
+      category: json['category'] ?? '',
+      plannedAmount: json['plannedAmount'] != null ? (json['plannedAmount'] as num).toDouble() : 0.0,
     );
   }
 
@@ -181,12 +181,12 @@ class AIAdvice {
 
   factory AIAdvice.fromJson(Map<String, dynamic> json) {
     return AIAdvice(
-      id: json['id'],
-      userId: json['userId'],
-      userQuery: json['userQuery'],
-      aiResponse: json['aiResponse'],
+      id: json['id'] ?? 0,
+      userId: json['userId'] ?? 1,
+      userQuery: json['userQuery'] ?? '',
+      aiResponse: json['aiResponse'] ?? '',
       proposedActionsJson: json['proposedActionsJson'],
-      isApplied: json['isApplied'],
+      isApplied: json['isApplied'] ?? false,
     );
   }
 }

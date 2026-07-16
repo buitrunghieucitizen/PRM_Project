@@ -17,6 +17,7 @@ class Dashboard extends StatefulWidget {
 class _DashboardState extends State<Dashboard> {
   final ApiService _apiService = ApiService();
   bool _isLoading = true;
+  bool _hasError = false;
 
   double _totalIncome = 0;
   double _totalExpense = 0;
@@ -48,7 +49,10 @@ class _DashboardState extends State<Dashboard> {
   }
 
   Future<void> _loadData() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _hasError = false;
+    });
     try {
       final results = await Future.wait([
         _apiService.getUser(ApiService.currentUserId),
@@ -129,6 +133,13 @@ class _DashboardState extends State<Dashboard> {
       }
     } catch (e) {
       debugPrint(e.toString());
+      if (mounted) {
+        setState(() => _hasError = true);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Lỗi tải dữ liệu: $e'),
+          backgroundColor: Colors.red.shade800,
+        ));
+      }
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -145,7 +156,7 @@ class _DashboardState extends State<Dashboard> {
   }
 
   String _fmtCompact(double n, bool isDetailed) {
-    if (isDetailed) return '${n.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]}.')}';
+    if (isDetailed) return n.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]}.');
     if (n >= 1e9) return '${(n / 1e9).toStringAsFixed(1)}T';
     if (n >= 1e6) return '${(n / 1e6).toStringAsFixed(1)}M';
     if (n >= 1e3) return '${(n / 1e3).toStringAsFixed(0)}K';
@@ -160,6 +171,25 @@ class _DashboardState extends State<Dashboard> {
 
     if (_isLoading) {
       return Center(child: CircularProgressIndicator(color: theme.primaryColor));
+    }
+
+    if (_hasError) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, size: 48, color: Colors.red),
+            const SizedBox(height: 16),
+            const Text('Không thể tải dữ liệu'),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _loadData,
+              style: ElevatedButton.styleFrom(backgroundColor: theme.primaryColor),
+              child: const Text('Thử lại', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      );
     }
 
     return Container(

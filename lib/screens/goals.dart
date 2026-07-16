@@ -29,6 +29,14 @@ class _GoalsScreenState extends State<GoalsScreen> {
   final TextEditingController _currentController = TextEditingController();
 
   @override
+  void dispose() {
+    _titleController.dispose();
+    _targetController.dispose();
+    _currentController.dispose();
+    super.dispose();
+  }
+
+  @override
   void initState() {
     super.initState();
     _loadData();
@@ -515,53 +523,34 @@ class _GoalsScreenState extends State<GoalsScreen> {
                 SwitchListTile(
                   title: Text('Đã hoàn thành', style: TextStyle(color: theme.textTheme.bodyLarge?.color, fontSize: 14, fontWeight: FontWeight.w600)),
                   value: _isCompleted,
-                  activeColor: theme.primaryColor,
+                  activeThumbColor: theme.primaryColor,
                   onChanged: (val) => setState(() => _isCompleted = val),
                   contentPadding: EdgeInsets.zero,
                 ),
               ],
               const SizedBox(height: 12),
               ElevatedButton(
-                onPressed: () async {
-                  final title = _titleController.text.trim();
-                  final target = double.tryParse(_targetController.text) ?? 0;
-                  final current = double.tryParse(_currentController.text) ?? 0;
-                  if (title.isEmpty || target <= 0) return;
-
-                  setState(() => _showAdd = false);
-                  try {
-                    if (isEditing) {
-                      final updatedGoal = Goal(
-                        id: _editingGoal!.id,
-                        userId: ApiService.currentUserId,
-                        title: title,
-                        targetAmount: target,
-                        currentAmount: current,
-                        deadline: _editingGoal!.deadline,
-                        isCompleted: _isCompleted,
-                      );
-                      await _apiService.updateGoal(updatedGoal);
-                    } else {
-                      final newGoal = Goal(
-                        id: 0,
-                        userId: ApiService.currentUserId,
-                        title: title,
-                        targetAmount: target,
-                        currentAmount: current,
-                        deadline: null,
-                        isCompleted: _isCompleted,
-                      );
-                      await _apiService.addGoal(newGoal);
-                    }
-                    
-                    _titleController.clear();
-                    _targetController.clear();
-                    _currentController.clear();
-                    _loadData();
-                  } catch (e) {
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
-                    }
+                onPressed: () {
+                  if (isEditing) {
+                    showDialog(
+                      context: context,
+                      builder: (c) => AlertDialog(
+                        title: const Text('Xác nhận thay đổi'),
+                        content: const Text('Bạn có chắc chắn muốn lưu các thay đổi này?'),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Hủy')),
+                          ElevatedButton(
+                            onPressed: () {
+                              Navigator.pop(c);
+                              _performSaveGoal(isEditing);
+                            },
+                            child: const Text('Lưu'),
+                          ),
+                        ],
+                      ),
+                    );
+                  } else {
+                    _performSaveGoal(isEditing);
                   }
                 },
                 style: ElevatedButton.styleFrom(
@@ -578,6 +567,48 @@ class _GoalsScreenState extends State<GoalsScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _performSaveGoal(bool isEditing) async {
+    final title = _titleController.text.trim();
+    final target = double.tryParse(_targetController.text) ?? 0;
+    final current = double.tryParse(_currentController.text) ?? 0;
+    if (title.isEmpty || target <= 0) return;
+
+    setState(() => _showAdd = false);
+    try {
+      if (isEditing) {
+        final updatedGoal = Goal(
+          id: _editingGoal!.id,
+          userId: ApiService.currentUserId,
+          title: title,
+          targetAmount: target,
+          currentAmount: current,
+          deadline: _editingGoal!.deadline,
+          isCompleted: _isCompleted,
+        );
+        await _apiService.updateGoal(updatedGoal);
+      } else {
+        final newGoal = Goal(
+          id: 0,
+          userId: ApiService.currentUserId,
+          title: title,
+          targetAmount: target,
+          currentAmount: current,
+          deadline: null,
+          isCompleted: _isCompleted,
+        );
+        await _apiService.addGoal(newGoal);
+      }
+      
+      _titleController.clear();
+      _targetController.clear();
+      _currentController.clear();
+      _loadData();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+    }
   }
 
   Widget _buildTextField(String hint, TextEditingController controller, ThemeData theme, {bool isNumber = false}) {

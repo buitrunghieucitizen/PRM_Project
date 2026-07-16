@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
@@ -12,6 +13,8 @@ class Journal extends StatefulWidget {
 }
 
 class _JournalState extends State<Journal> {
+  Timer? _debounce;
+  final ApiService _apiService = ApiService();
   String _tab = 'all';
   String _search = '';
   bool _showAdd = false;
@@ -22,9 +25,19 @@ class _JournalState extends State<Journal> {
   final TextEditingController _addNoteController = TextEditingController();
   final TextEditingController _addAmountController = TextEditingController();
   final TextEditingController _customCategoryController = TextEditingController();
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _searchController.dispose();
+    _addNoteController.dispose();
+    _addAmountController.dispose();
+    _customCategoryController.dispose();
+    super.dispose();
+  }
   String _addCategory = 'Ăn uống';
 
-  final ApiService _apiService = ApiService();
+
   bool _isLoading = true;
   List<Transaction> _transactions = [];
   List<MonthlyPlan> _plans = [];
@@ -162,7 +175,7 @@ class _JournalState extends State<Journal> {
       final now = DateTime.now();
       
       if (_editingTx != null) {
-        // Edit existing
+        // Cập nhật giao dịch
         final updatedTx = Transaction(
           id: _editingTx!.id,
           userId: ApiService.currentUserId,
@@ -175,81 +188,56 @@ class _JournalState extends State<Journal> {
         );
         await _apiService.updateTransaction(updatedTx);
       } else {
-        // Check for aggregation
-        Transaction? existingTx;
-        for (var t in _transactions) {
-          if (t.type.toLowerCase() == _addType && 
-              t.category == finalCategory && 
-              t.transactionDate.year == now.year &&
-              t.transactionDate.month == now.month &&
-              t.transactionDate.day == now.day) {
-            existingTx = t;
-            break;
-          }
-        }
-
-        if (existingTx != null) {
-          // Aggregate
-          final updatedTx = Transaction(
-            id: existingTx.id,
-            userId: ApiService.currentUserId,
-            amount: existingTx.amount + amt,
-            type: existingTx.type,
-            category: existingTx.category,
-            note: existingTx.note,
-            transactionDate: existingTx.transactionDate,
-            goalId: _addGoalId ?? existingTx.goalId,
-          );
-          await _apiService.updateTransaction(updatedTx);
-        } else {
-          // Add new
-          final newTx = Transaction(
-            id: 0,
-            userId: ApiService.currentUserId,
-            amount: amt,
-            type: _addType == 'income' ? 'Income' : 'Expense',
-            category: finalCategory,
-            note: _addNoteController.text,
-            transactionDate: now,
-            goalId: _addGoalId,
-          );
-          await _apiService.addTransaction(newTx);
-        }
+        // Thêm mới giao dịch, KHÔNG cộng dồn nữa
+        final newTx = Transaction(
+          id: 0,
+          userId: ApiService.currentUserId,
+          amount: amt,
+          type: _addType == 'income' ? 'Income' : 'Expense',
+          category: finalCategory,
+          note: _addNoteController.text,
+          transactionDate: now,
+          goalId: _addGoalId,
+        );
+        await _apiService.addTransaction(newTx);
       }
 
-      // Budget checking if expense
-      if (_addType == 'expense' && mounted) {
-        final plan = _plans.where((p) => p.category == _addCategory && p.month == now.month && p.year == now.year).firstOrNull;
-        if (plan != null && plan.plannedAmount > 0) {
-          double spentSoFar = 0;
-          for (var t in _transactions) {
-            if (t.type.toLowerCase() == 'expense' && t.category == _addCategory && 
-                t.transactionDate.month == now.month && t.transactionDate.year == now.year &&
-                (_editingTx == null || t.id != _editingTx!.id)) {
-              spentSoFar += t.amount;
-            }
-          }
-          spentSoFar += amt; // Add current operation's amount
-          
-          if (spentSoFar >= plan.plannedAmount) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: const Text('🚨 Bạn đã vượt quá ngân sách kế hoạch cho danh mục này!', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-              backgroundColor: Colors.red.shade800,
-              behavior: SnackBarBehavior.floating,
-            ));
-          } else if (spentSoFar >= plan.plannedAmount * 0.9) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: const Text('⚠️ Cảnh báo: Bạn sắp tiêu hết ngân sách danh mục này!', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-              backgroundColor: Colors.orange.shade800,
-              behavior: SnackBarBehavior.floating,
-            ));
-          }
-        }
-      }
-
+      _checkBudget(amt, finalCategory, now);
       _loadData();
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+    }
+  }
+
+  void _checkBudget(double amt, String category, DateTime now) {
+    if (_addType != 'expense' || !mounted) return;
+
+    final plan = _plans.where((p) => p.category == category && p.month == now.month && p.year == now.year).firstOrNull;
+    if (plan != null && plan.plannedAmount > 0) {
+      double spentSoFar = 0;
+      for (var t in _transactions) {
+        if (t.type.toLowerCase() == 'expense' && t.category == category && 
+            t.transactionDate.month == now.month && t.transactionDate.year == now.year &&
+            (_editingTx == null || t.id != _editingTx!.id)) {
+          spentSoFar += t.amount;
+        }
+      }
+      spentSoFar += amt;
+      
+      if (spentSoFar >= plan.plannedAmount) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('🚨 Bạn đã vượt quá ngân sách kế hoạch cho danh mục này!', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          backgroundColor: Colors.red.shade800,
+          behavior: SnackBarBehavior.floating,
+        ));
+      } else if (spentSoFar >= plan.plannedAmount * 0.9) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('⚠️ Cảnh báo: Bạn sắp tiêu hết ngân sách danh mục này!', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          backgroundColor: Colors.orange.shade800,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
     }
   }
 
@@ -327,7 +315,12 @@ class _JournalState extends State<Journal> {
                       ),
                       child: TextField(
                         controller: _searchController,
-                        onChanged: (v) => setState(() => _search = v),
+                        onChanged: (v) {
+                          if (_debounce?.isActive ?? false) _debounce!.cancel();
+                          _debounce = Timer(const Duration(milliseconds: 500), () {
+                            setState(() => _search = v);
+                          });
+                        },
                         style: TextStyle(color: theme.scaffoldBackgroundColor, fontSize: 14),
                         decoration: InputDecoration(
                           hintText: 'Tìm kiếm giao dịch...',
@@ -433,8 +426,11 @@ class _JournalState extends State<Journal> {
     double totalDayInc = 0;
     double totalDayExp = 0;
     for (var t in txs) {
-      if (t.type.toLowerCase() == 'income') totalDayInc += t.amount;
-      else totalDayExp += t.amount;
+      if (t.type.toLowerCase() == 'income') {
+        totalDayInc += t.amount;
+      } else {
+        totalDayExp += t.amount;
+      }
     }
 
     return Padding(
@@ -610,7 +606,7 @@ class _JournalState extends State<Journal> {
               const SizedBox(height: 16),
               
               DropdownButtonFormField<String>(
-                value: _addCategory,
+                initialValue: _addCategory,
                 dropdownColor: theme.cardColor,
                 style: TextStyle(color: theme.textTheme.bodyLarge?.color, fontSize: 14),
                 decoration: InputDecoration(
@@ -673,7 +669,7 @@ class _JournalState extends State<Journal> {
               
               if (_goals.isNotEmpty) ...[
                 DropdownButtonFormField<int?>(
-                  value: _addGoalId,
+                  initialValue: _addGoalId,
                   dropdownColor: theme.cardColor,
                   style: TextStyle(color: theme.textTheme.bodyLarge?.color, fontSize: 14),
                   decoration: InputDecoration(
@@ -695,7 +691,7 @@ class _JournalState extends State<Journal> {
                         value: g.id,
                         child: Text(g.title, style: TextStyle(color: theme.textTheme.bodyLarge?.color)),
                       );
-                    }).toList(),
+                    }),
                   ],
                   onChanged: (val) {
                     setState(() => _addGoalId = val);
@@ -719,7 +715,29 @@ class _JournalState extends State<Journal> {
               ),
               const SizedBox(height: 24),
               ElevatedButton(
-                onPressed: _saveTransaction,
+                onPressed: () {
+                  if (_editingTx != null) {
+                    showDialog(
+                      context: context,
+                      builder: (c) => AlertDialog(
+                        title: const Text('Xác nhận thay đổi'),
+                        content: const Text('Bạn có chắc chắn muốn lưu các thay đổi này?'),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Hủy')),
+                          ElevatedButton(
+                            onPressed: () {
+                              Navigator.pop(c);
+                              _saveTransaction();
+                            },
+                            child: const Text('Lưu'),
+                          ),
+                        ],
+                      ),
+                    );
+                  } else {
+                    _saveTransaction();
+                  }
+                },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: theme.primaryColor,
                   foregroundColor: theme.scaffoldBackgroundColor,

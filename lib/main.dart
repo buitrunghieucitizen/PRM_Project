@@ -69,6 +69,7 @@ class _AppContainerState extends State<AppContainer> {
   void initState() {
     super.initState();
     _loggedIn = ApiService.isLoggedIn;
+    ApiService.onUnauthorized = _setLoggedOut;
   }
 
   void _setLoggedIn(bool isNewUser) {

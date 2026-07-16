@@ -17,6 +17,12 @@ class _AIAdvisorState extends State<AIAdvisor> {
   bool _isLoading = false;
   bool _hasApplied = false;
 
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
   void _sendMessage() async {
     if (_controller.text.trim().isEmpty) return;
     

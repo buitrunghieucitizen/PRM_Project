@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import '../models/models.dart';
-import 'ai_advisor.dart';
 
 class MonthlyPlanScreen extends StatefulWidget {
   const MonthlyPlanScreen({super.key});
@@ -18,12 +17,23 @@ class _MonthlyPlanScreenState extends State<MonthlyPlanScreen> {
   List<MonthlyPlan> _plans = [];
   Map<String, double> _categorySpent = {};
   
+  // Lưu lịch sử chat AI để không mất khi đóng popup
+  final List<Map<String, dynamic>> _aiMessages = [];
+  bool _showAIChat = false;
+
   bool _showAdd = false;
   MonthlyPlan? _editingPlan;
   
   String _addCategory = 'Ăn uống';
   final TextEditingController _addAmountController = TextEditingController();
   final TextEditingController _customCategoryController = TextEditingController();
+
+  @override
+  void dispose() {
+    _addAmountController.dispose();
+    _customCategoryController.dispose();
+    super.dispose();
+  }
 
   int _selectedMonth = DateTime.now().month;
   int _selectedYear = DateTime.now().year;
@@ -76,7 +86,7 @@ class _MonthlyPlanScreenState extends State<MonthlyPlanScreen> {
       if (n >= 1e6) return '${(n / 1e6).toStringAsFixed(1)}M';
       if (n >= 1e3) return '${(n / 1e3).toStringAsFixed(0)}K';
     }
-    return '${n.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]}.')}';
+    return n.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]}.');
   }
 
   void _openAddModal([MonthlyPlan? p]) {
@@ -403,31 +413,58 @@ class _MonthlyPlanScreenState extends State<MonthlyPlanScreen> {
           ),
         ),
 
-        // AI Advisor Button
+        // AI Chat Panel (nửa dưới màn hình)
+        if (_showAIChat)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: MediaQuery.of(context).size.height * 0.33,
+            child: _AIPanel(
+              userId: ApiService.currentUserId,
+              onApplied: () => _loadData(),
+              messages: _aiMessages,
+              onClose: () => setState(() => _showAIChat = false),
+            ),
+          ),
+
+        // AI Advisor Toggle Button
         Positioned(
-          bottom: 24,
+          bottom: _showAIChat ? MediaQuery.of(context).size.height * 0.33 + 8 : 24,
           right: 20,
           child: GestureDetector(
-            onTap: () {
-              Navigator.push(context, MaterialPageRoute(builder: (_) => AIAdvisor(userId: ApiService.currentUserId))).then((_) {
-                _loadData(); // Refresh if AI applied something
-              });
-            },
-            child: Container(
+            onTap: () => setState(() => _showAIChat = !_showAIChat),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeOut,
               width: 56,
               height: 56,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [theme.primaryColor, theme.primaryColor.withValues(alpha: 0.8)],
+                  colors: _showAIChat
+                      ? [Colors.red.shade400, Colors.red.shade600]
+                      : [theme.primaryColor, theme.primaryColor.withValues(alpha: 0.8)],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
                 shape: BoxShape.circle,
                 boxShadow: [
-                  BoxShadow(color: theme.primaryColor.withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 4)),
+                  BoxShadow(
+                    color: (_showAIChat ? Colors.red : theme.primaryColor).withValues(alpha: 0.3),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
                 ],
               ),
-              child: const Icon(Icons.auto_awesome, color: Colors.white, size: 28),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                child: Icon(
+                  _showAIChat ? Icons.close : Icons.auto_awesome,
+                  key: ValueKey(_showAIChat),
+                  color: Colors.white,
+                  size: 28,
+                ),
+              ),
             ),
           ),
         ),
@@ -475,7 +512,7 @@ class _MonthlyPlanScreenState extends State<MonthlyPlanScreen> {
               ),
               const SizedBox(height: 24),
               DropdownButtonFormField<String>(
-                value: _addCategory,
+                initialValue: _addCategory,
                 dropdownColor: theme.cardColor,
                 style: TextStyle(color: theme.textTheme.bodyLarge?.color, fontSize: 14),
                 decoration: InputDecoration(
@@ -536,7 +573,29 @@ class _MonthlyPlanScreenState extends State<MonthlyPlanScreen> {
               ),
               const SizedBox(height: 24),
               ElevatedButton(
-                onPressed: _savePlan,
+                onPressed: () {
+                  if (_editingPlan != null) {
+                    showDialog(
+                      context: context,
+                      builder: (c) => AlertDialog(
+                        title: const Text('Xác nhận thay đổi'),
+                        content: const Text('Bạn có chắc chắn muốn lưu các thay đổi này?'),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Hủy')),
+                          ElevatedButton(
+                            onPressed: () {
+                              Navigator.pop(c);
+                              _savePlan();
+                            },
+                            child: const Text('Lưu'),
+                          ),
+                        ],
+                      ),
+                    );
+                  } else {
+                    _savePlan();
+                  }
+                },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: theme.primaryColor,
                   foregroundColor: theme.scaffoldBackgroundColor,
@@ -549,6 +608,361 @@ class _MonthlyPlanScreenState extends State<MonthlyPlanScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ─── AI Bottom Panel ─────────────────────────────────────────────────────────
+
+class _AIPanel extends StatefulWidget {
+  final int userId;
+  final VoidCallback onApplied;
+  final VoidCallback onClose;
+  final List<Map<String, dynamic>> messages;
+  const _AIPanel({required this.userId, required this.onApplied, required this.onClose, required this.messages});
+
+  @override
+  State<_AIPanel> createState() => _AIPanelState();
+}
+
+class _AIPanelState extends State<_AIPanel> {
+  final ApiService _apiService = ApiService();
+  final TextEditingController _controller = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  List<Map<String, dynamic>> get _messages => widget.messages;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_messages.isNotEmpty) {
+      _scrollToBottom();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _scrollToBottom() {
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  void _sendMessage() async {
+    if (_controller.text.trim().isEmpty) return;
+
+    String query = _controller.text.trim();
+    setState(() {
+      _messages.add({'sender': 'user', 'text': query});
+      _isLoading = true;
+      _controller.clear();
+    });
+    _scrollToBottom();
+
+    try {
+      AIAdvice advice = await _apiService.consultAI(widget.userId, query);
+      if (mounted) {
+        setState(() {
+          _messages.add({'sender': 'ai', 'advice': advice});
+        });
+        _scrollToBottom();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _messages.add({'sender': 'ai', 'error': 'Lỗi kết nối AI: $e'});
+        });
+        _scrollToBottom();
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  void _applyAdvice(AIAdvice advice) async {
+    bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        title: Text('Xác nhận áp dụng', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color)),
+        content: Text(
+          'Bạn có chắc chắn muốn áp dụng các đề xuất từ AI?',
+          style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c, false),
+            child: Text('Hủy', style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(c, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).primaryColor,
+              foregroundColor: Theme.of(context).scaffoldBackgroundColor,
+            ),
+            child: const Text('Áp dụng'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      bool success = await _apiService.applyAIAdvice(advice.id);
+      if (success && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã áp dụng thành công!')));
+        setState(() {
+          advice.isApplied = true;
+        });
+        widget.onApplied();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.scaffoldBackgroundColor,
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(20),
+          topRight: Radius.circular(20),
+        ),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 16, offset: const Offset(0, -4)),
+        ],
+      ),
+      child: Column(
+        children: [
+          // ── Header ──
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: theme.primaryColor,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(20),
+                topRight: Radius.circular(20),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.auto_awesome, color: Colors.white, size: 16),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('AI Tư vấn', style: TextStyle(color: theme.scaffoldBackgroundColor, fontWeight: FontWeight.w700, fontSize: 14)),
+                      Text('Hỏi về tài chính của bạn', style: TextStyle(color: theme.scaffoldBackgroundColor.withValues(alpha: 0.6), fontSize: 10)),
+                    ],
+                  ),
+                ),
+                GestureDetector(
+                  onTap: widget.onClose,
+                  child: Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 18),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // ── Messages ──
+          Expanded(
+            child: _messages.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.auto_awesome, color: theme.primaryColor.withValues(alpha: 0.3), size: 40),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Hãy hỏi AI về kế hoạch\nchi tiêu của bạn!',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: theme.textTheme.bodySmall?.color, fontSize: 13, height: 1.5),
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.all(14),
+                    itemCount: _messages.length,
+                    itemBuilder: (context, index) {
+                      final msg = _messages[index];
+                      bool isUser = msg['sender'] == 'user';
+
+                      if (isUser) {
+                        return Align(
+                          alignment: Alignment.centerRight,
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 8, left: 40),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: theme.primaryColor,
+                              borderRadius: BorderRadius.circular(14).copyWith(bottomRight: const Radius.circular(4)),
+                            ),
+                            child: Text(msg['text'], style: TextStyle(color: theme.scaffoldBackgroundColor, fontSize: 13)),
+                          ),
+                        );
+                      } else {
+                        if (msg.containsKey('error')) {
+                          return Align(
+                            alignment: Alignment.centerLeft,
+                            child: Container(
+                              margin: const EdgeInsets.only(bottom: 8, right: 40),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.surface,
+                                borderRadius: BorderRadius.circular(14).copyWith(bottomLeft: const Radius.circular(4)),
+                              ),
+                              child: Text(msg['error'], style: TextStyle(color: theme.textTheme.bodyLarge?.color, fontSize: 13)),
+                            ),
+                          );
+                        }
+
+                        AIAdvice advice = msg['advice'];
+                        return Align(
+                          alignment: Alignment.centerLeft,
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 8, right: 24),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.surface,
+                              borderRadius: BorderRadius.circular(14).copyWith(bottomLeft: const Radius.circular(4)),
+                              border: Border.all(color: theme.dividerColor),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(advice.aiResponse, style: TextStyle(color: theme.textTheme.bodyLarge?.color, height: 1.5, fontSize: 13)),
+                                if (!advice.isApplied) ...[
+                                  const SizedBox(height: 8),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: ElevatedButton.icon(
+                                      onPressed: () => _applyAdvice(advice),
+                                      icon: const Icon(Icons.check_circle_outline, size: 14),
+                                      label: const Text('Áp dụng', style: TextStyle(fontSize: 12)),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: theme.primaryColor,
+                                        foregroundColor: theme.scaffoldBackgroundColor,
+                                        elevation: 0,
+                                        padding: const EdgeInsets.symmetric(vertical: 6),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                      ),
+                                    ),
+                                  ),
+                                ] else ...[
+                                  const SizedBox(height: 6),
+                                  Row(
+                                    children: [
+                                      Icon(Icons.check_circle, color: theme.primaryColor, size: 14),
+                                      const SizedBox(width: 4),
+                                      Text('Đã áp dụng', style: TextStyle(color: theme.primaryColor, fontWeight: FontWeight.w600, fontSize: 11)),
+                                    ],
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                  ),
+          ),
+
+          // ── Loading indicator ──
+          if (_isLoading)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(color: theme.primaryColor, strokeWidth: 2),
+              ),
+            ),
+
+          // ── Input bar ──
+          Container(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+            decoration: BoxDecoration(
+              color: theme.cardColor,
+              border: Border(top: BorderSide(color: theme.dividerColor)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _controller,
+                    style: TextStyle(color: theme.textTheme.bodyLarge?.color, fontSize: 13),
+                    decoration: InputDecoration(
+                      hintText: 'Nhập câu hỏi...',
+                      hintStyle: TextStyle(color: theme.textTheme.bodySmall?.color?.withValues(alpha: 0.6), fontSize: 13),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide.none,
+                      ),
+                      filled: true,
+                      fillColor: theme.colorScheme.surface,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      isDense: true,
+                    ),
+                    onSubmitted: (_) => _sendMessage(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: _sendMessage,
+                  child: Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: theme.primaryColor,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(Icons.send, color: theme.scaffoldBackgroundColor, size: 16),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
